@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ListDetail, Tabs } from '../../components'
-import { useStore } from '../../store/store'
-import { useUIState } from '../../store/ui'
+import { useStore } from '../../hooks/useStore'
+import { useUIState } from '../../hooks/useUIState'
 import type { Session } from '../../types/domain'
 import { AiTab, OverviewTab } from './tabs'
 
@@ -59,7 +59,7 @@ export function SessionsPage() {
               </div>
             </button>
           )}
-          emptyPlaceholder={<div className="text-sm text-[var(--text-secondary)]">No sessions yet.</div>}
+          emptyPlaceholder={<div className="p-3 text-sm text-[var(--text-secondary)]">No sessions yet.</div>}
           detail={<SessionDetail session={sessions.find(s => s.id === active) ?? null} />}
         />
       </div>

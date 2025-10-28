@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
+import { navigate } from '../../hooks/useRoute'
 import { getScenarioName } from '../../lib/utils'
-import { goto } from '../../lib/nav'
 import type { ScenarioRecord } from '../../types/ipc'
+import { Dropdown } from '../shared/Dropdown'
 
 function fmtPct01(v: any) {
   const n = typeof v === 'number' ? v : Number(v)
@@ -54,7 +55,7 @@ export function Findings({ items }: { items: ScenarioRecord[] }) {
   const openItem = (rec: ScenarioRecord) => {
     const file = encodeURIComponent(rec.filePath)
     const tab = openTab
-    goto(`/scenarios?file=${file}&tab=${tab}`)
+    navigate(`/scenarios?file=${file}&tab=${tab}`)
   }
 
   const Row = ({ rec }: { rec: ScenarioRecord }) => (
@@ -78,17 +79,12 @@ export function Findings({ items }: { items: ScenarioRecord[] }) {
     <div className="rounded border border-[var(--border-primary)] bg-[var(--bg-secondary)]">
       <div className="px-3 py-2 border-b border-[var(--border-primary)] text-sm font-medium text-[var(--text-primary)] flex items-center justify-between">
         <span>Performance findings</span>
-        <label className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
-          <span>Open in</span>
-          <select
-            className="bg-[var(--bg-tertiary)] text-[var(--text-primary)] text-xs rounded px-2 py-1 border border-[var(--border-primary)]"
-            value={openTab}
-            onChange={(e) => setOpenTab(e.target.value as any)}
-          >
-            <option value="analysis">Analysis</option>
-            <option value="raw">Raw Stats</option>
-          </select>
-        </label>
+        <Dropdown
+          label="Open in"
+          value={openTab}
+          onChange={(v: string) => setOpenTab(v as 'analysis' | 'raw')}
+          options={[{ label: 'Analysis', value: 'analysis' }, { label: 'Raw Stats', value: 'raw' }]}
+        />
       </div>
       <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
