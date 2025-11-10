@@ -116,7 +116,7 @@ function BenchmarksExplore({ items, favorites, loading, onToggleFav, onOpen, que
   return (
     <div className="space-y-4 h-full p-4 overflow-auto">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-lg font-medium">Benchmark — Explore</div>
+        <div className="text-lg font-medium">Benchmark - Explore</div>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search size={16} className="text-[var(--text-secondary)] absolute left-2 top-1/2 -translate-y-1/2" strokeWidth={1.5} />
@@ -134,7 +134,7 @@ function BenchmarksExplore({ items, favorites, loading, onToggleFav, onOpen, que
             className={`px-2 py-1.5 rounded border text-sm flex items-center gap-2 focus:outline-none focus:ring-1 focus:ring-[var(--border-primary)] ${showFavOnly ? 'bg-[var(--accent-primary)]/20 border-[var(--accent-primary)] text-[var(--text-primary)] hover:bg-[var(--accent-primary)]/30' : 'bg-[var(--bg-tertiary)] border-[var(--border-primary)] hover:bg-[var(--bg-secondary)]'}`}
             title={showFavOnly ? 'Showing favorites' : 'Show all'}
           >
-            <Star size={16} strokeWidth={1.5} style={{ color: showFavOnly ? 'var(--accent-primary)' as any : undefined, fill: showFavOnly ? 'var(--accent-primary)' : 'none' }} />
+            <Star size={16} strokeWidth={1.5} style={{ color: showFavOnly ? 'var(--accent-primary)' : undefined, fill: showFavOnly ? 'var(--accent-primary)' : 'none' }} />
             {showFavOnly ? 'Favorites' : 'All'}
           </button>
         </div>
@@ -164,7 +164,9 @@ function BenchmarksExplore({ items, favorites, loading, onToggleFav, onOpen, que
   )
 }
 
-function BenchmarksDetail({ id, bench, favorites, onToggleFav, onBack }: { id: string; bench?: Benchmark; favorites: string[]; onToggleFav: (id: string) => void; onBack: () => void }) {
+type BenchmarksDetailProps = { id: string; bench?: Benchmark; favorites: string[]; onToggleFav: (id: string) => void; onBack: () => void }
+
+function BenchmarksDetail({ id, bench, favorites, onToggleFav, onBack }: BenchmarksDetailProps) {
   const [tab, setTab] = useUIState<'overview' | 'analysis' | 'ai'>(`Benchmark:${id}:tab`, 'overview')
   // Use shared hook for progress + live updates and difficulty state
   const { progress, loading, error, difficultyIndex, setDifficultyIndex } = useOpenedBenchmarkProgress({ id, bench: bench ?? null })
@@ -220,23 +222,16 @@ function BenchmarksDetail({ id, bench, favorites, onToggleFav, onBack }: { id: s
         </button>
         <div className="text-lg font-medium flex items-center gap-2">
           <span>Benchmark: {bench ? `${bench.abbreviation} ${bench.benchmarkName}` : id}</span>
-          {bench?.difficulties?.[difficultyIndex]?.sharecode && (
-            <button
-              onClick={() => {
-                try {
-                  const sc = String(bench.difficulties[difficultyIndex].sharecode)
-                  launchPlaylist(sc).catch(() => { /* ignore */ })
-                } catch (e) {
-                  // ignore
-                }
-              }}
-              className="p-1 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] mb-1"
-              aria-label="Play benchmark playlist"
-              title="Play benchmark playlist"
-            >
-              <Play size={18} />
-            </button>
-          )}
+          {/* Play playlist for selected difficulty */}
+          <button
+            onClick={() => { if (bench) launchPlaylist(bench.difficulties[difficultyIndex].sharecode) }}
+            disabled={!bench}
+            className="p-1 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] mb-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Play benchmark playlist"
+            title="Play benchmark playlist in Kovaak's"
+          >
+            <Play size={18} />
+          </button>
           {/* Share (screenshot) button */}
           <button
             onClick={() => { if (bench && progress) setRenderShare(true) }}
@@ -256,7 +251,7 @@ function BenchmarksDetail({ id, bench, favorites, onToggleFav, onBack }: { id: s
             <Star
               size={20}
               strokeWidth={1.5}
-              style={{ color: (favorites.includes(id) ? 'var(--accent-primary)' : undefined) as any, fill: favorites.includes(id) ? 'var(--accent-primary)' : 'none' }}
+              style={{ color: favorites.includes(id) ? 'var(--accent-primary)' : undefined, fill: favorites.includes(id) ? 'var(--accent-primary)' : 'none' }}
             />
           </button>
         </div>
@@ -282,7 +277,7 @@ function BenchmarksDetail({ id, bench, favorites, onToggleFav, onBack }: { id: s
       {bench && progress && renderShare && (
         <div style={{ position: 'fixed', left: -99999, top: -99999, pointerEvents: 'none' }} aria-hidden>
           <div ref={shareRef}>
-            <ShareBenchmarkProgress bench={bench} difficultyIndex={difficultyIndex} progress={progress as any} />
+            <ShareBenchmarkProgress bench={bench} difficultyIndex={difficultyIndex} progress={progress!} />
           </div>
         </div>
       )}

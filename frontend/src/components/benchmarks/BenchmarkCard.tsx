@@ -1,5 +1,5 @@
 import { ChevronRight, Star } from 'lucide-react';
-import React from 'react';
+import type { MouseEvent } from 'react';
 
 type BenchmarkCardProps = {
   id: string
@@ -10,8 +10,9 @@ type BenchmarkCardProps = {
   onOpen: (id: string) => void
   onToggleFavorite: (id: string) => void
 }
+
 export function BenchmarkCard({ id, title, abbreviation, color, isFavorite, onOpen, onToggleFavorite }: BenchmarkCardProps) {
-  const handleToggle = (e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleToggle = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
     onToggleFavorite(id)
   }
@@ -30,7 +31,7 @@ export function BenchmarkCard({ id, title, abbreviation, color, isFavorite, onOp
           onClick={handleToggle}
           className="inline-flex items-center justify-center rounded w-8 h-8 text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] focus:outline-none"
         >
-          <Star size={20} strokeWidth={1.5} style={{ color: isFavorite ? 'var(--accent-primary)' as any : undefined, fill: isFavorite ? 'var(--accent-primary)' : 'none' }} />
+          <Star size={20} strokeWidth={1.5} style={{ color: isFavorite ? 'var(--accent-primary)' : undefined, fill: isFavorite ? 'var(--accent-primary)' : 'none' }} />
         </button>
         <div className="font-medium text-[var(--text-primary)] truncate flex-1">{title}</div>
         <span

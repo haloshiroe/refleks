@@ -2,14 +2,19 @@ import { useMemo } from 'react'
 import { Bar, Radar } from 'react-chartjs-2'
 import { useChartTheme } from '../../hooks/useChartTheme'
 import { usePageState } from '../../hooks/usePageState'
-import { buildRankDefs, hexToRgba, normalizedRankProgress } from '../../lib/benchmarks/utils'
-import type { Benchmark } from '../../types/ipc'
+import { hexToRgba, normalizedRankProgress } from '../../lib/benchmarks'
+import type { Benchmark, BenchmarkProgress } from '../../types/ipc'
 import { ChartBox } from '../shared/ChartBox'
 
-export function BenchmarkStrengths({ bench, progress, difficultyIndex, height = 360 }:
-  { bench: Benchmark; progress: Record<string, any>; difficultyIndex: number; height?: number }) {
-  const difficulty = bench.difficulties[Math.min(Math.max(0, difficultyIndex), bench.difficulties.length - 1)]
-  const rankDefs = useMemo(() => buildRankDefs(difficulty, progress), [difficulty, progress])
+type BenchmarkStrengthsProps = {
+  bench: Benchmark
+  progress: BenchmarkProgress
+  difficultyIndex: number
+  height?: number
+}
+
+export function BenchmarkStrengths({ bench, progress, difficultyIndex, height = 360 }: BenchmarkStrengthsProps) {
+  const rankDefs = progress?.ranks || []
   const theme = useChartTheme()
 
   type Level = 'category' | 'subcategory' | 'scenario'
@@ -18,108 +23,42 @@ export function BenchmarkStrengths({ bench, progress, difficultyIndex, height = 
   type Mode = 'bar' | 'radar'
   const [mode, setMode] = usePageState<Mode>(`bench:${benchKey}:diff:${difficultyIndex}:strengths:mode`, 'bar')
 
-  // Build metadata from difficulty
-  const metaDefs = useMemo(() => {
-    const defs: Array<{
-      catName: string
-      catColor?: string
-      subDefs: Array<{ name: string; count: number; color?: string }>
-    }> = []
-    for (const c of difficulty?.categories || []) {
-      const catName = String((c as any)?.categoryName ?? '')
-      const catColor = (c as any)?.color as string | undefined
-      const subs = Array.isArray((c as any)?.subcategories) ? (c as any).subcategories : []
-      const subDefs = subs.map((s: any) => ({
-        name: String(s?.subcategoryName ?? ''),
-        count: Number(s?.scenarioCount ?? 0),
-        color: s?.color as string | undefined,
-      }))
-      defs.push({ catName, catColor, subDefs })
-    }
-    return defs
-  }, [difficulty])
-
-  // Map API progress to metadata strictly by order and counts (same logic as BenchmarkProgress)
-  const normalized = useMemo(() => {
-    type ScenarioEntry = [string, any]
-    const categories = progress?.categories as Record<string, any> | undefined
-    const result: Array<{
-      catName: string
-      catColor?: string
-      groups: Array<{ name: string; color?: string; scenarios: ScenarioEntry[] }>
-    }> = []
-
-    const flat: ScenarioEntry[] = []
-    if (categories) {
-      for (const cat of Object.values(categories)) {
-        const scenEntries = Object.entries((cat as any)?.scenarios || {}) as ScenarioEntry[]
-        flat.push(...scenEntries)
-      }
-    }
-
-    let pos = 0
-    for (let i = 0; i < metaDefs.length; i++) {
-      const { catName, catColor, subDefs } = metaDefs[i]
-      const groups: Array<{ name: string; color?: string; scenarios: ScenarioEntry[] }> = []
-
-      if (subDefs.length > 0) {
-        for (const sd of subDefs) {
-          const take = Math.max(0, Math.min(sd.count, flat.length - pos))
-          const scenarios = take > 0 ? flat.slice(pos, pos + take) : []
-          pos += take
-          groups.push({ name: sd.name, color: sd.color, scenarios })
-        }
-      } else {
-        groups.push({ name: '', color: undefined, scenarios: [] })
-      }
-
-      if (i === metaDefs.length - 1 && pos < flat.length) {
-        groups.push({ name: '', color: undefined, scenarios: flat.slice(pos) })
-        pos = flat.length
-      }
-
-      result.push({ catName, catColor, groups })
-    }
-
-    return result
-  }, [progress, metaDefs])
+  const categories = progress?.categories || []
 
   // Aggregate normalized strength per level
   const strength = useMemo(() => {
     const N = Math.max(1, rankDefs.length)
     if (level === 'category') {
-      const items = normalized.map(cat => {
+      const items = categories.map(cat => {
         const allScenarios = cat.groups.flatMap(g => g.scenarios)
-        const vals: number[] = allScenarios.map(([_, s]) => {
-          const raw = Number(s?.score || 0)
-          const score = raw / 100
-          const r = Number(s?.scenario_rank || 0)
-          const maxes: number[] = Array.isArray(s?.rank_maxes) ? s.rank_maxes : []
+        const vals: number[] = allScenarios.map((s) => {
+          const score = Number(s?.score || 0)
+          const r = Number(s?.scenarioRank || 0)
+          const maxes: number[] = Array.isArray(s?.thresholds) ? s.thresholds : []
           return normalizedRankProgress(r, score, maxes)
         })
         const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
         // Pick color by nearest achieved avg rank
         const idx = Math.max(0, Math.min(N - 1, Math.floor(avg * N)))
-        return { label: cat.catName, value: Math.round(avg * 100), color: rankDefs[idx]?.color || cat.catColor || '#4b5563' }
+        return { label: cat.name, value: Math.round(avg * 100), color: rankDefs[idx]?.color || cat.color || '#4b5563' }
       })
       items.sort((a, b) => b.value - a.value || a.label.localeCompare(b.label))
       return items
     }
     if (level === 'subcategory') {
       const rows: Array<{ label: string; value: number; color: string }> = []
-      for (const cat of normalized) {
+      for (const cat of categories) {
         for (const g of cat.groups) {
-          const vals = g.scenarios.map(([_, s]) => {
-            const raw = Number(s?.score || 0)
-            const score = raw / 100
-            const r = Number(s?.scenario_rank || 0)
-            const maxes: number[] = Array.isArray(s?.rank_maxes) ? s.rank_maxes : []
+          const vals = g.scenarios.map((s) => {
+            const score = Number(s?.score || 0)
+            const r = Number(s?.scenarioRank || 0)
+            const maxes: number[] = Array.isArray(s?.thresholds) ? s.thresholds : []
             return normalizedRankProgress(r, score, maxes)
           })
           const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
           const idx = Math.max(0, Math.min(N - 1, Math.floor(avg * N)))
-          const label = g.name ? `${cat.catName}: ${g.name}` : `${cat.catName}`
-          rows.push({ label, value: Math.round(avg * 100), color: rankDefs[idx]?.color || g.color || cat.catColor || '#4b5563' })
+          const label = g.name ? `${cat.name}: ${g.name}` : `${cat.name}`
+          rows.push({ label, value: Math.round(avg * 100), color: rankDefs[idx]?.color || g.color || cat.color || '#4b5563' })
         }
       }
       rows.sort((a, b) => b.value - a.value || a.label.localeCompare(b.label))
@@ -127,16 +66,15 @@ export function BenchmarkStrengths({ bench, progress, difficultyIndex, height = 
     }
     // scenario level
     const rows: Array<{ label: string; value: number; color: string }> = []
-    for (const cat of normalized) {
+    for (const cat of categories) {
       for (const g of cat.groups) {
-        for (const [name, s] of g.scenarios) {
-          const raw = Number(s?.score || 0)
-          const score = raw / 100
-          const r = Number(s?.scenario_rank || 0)
-          const maxes: number[] = Array.isArray(s?.rank_maxes) ? s.rank_maxes : []
+        for (const s of g.scenarios) {
+          const score = Number(s?.score || 0)
+          const r = Number(s?.scenarioRank || 0)
+          const maxes: number[] = Array.isArray(s?.thresholds) ? s.thresholds : []
           const prog = normalizedRankProgress(r, score, maxes)
           const idx = Math.max(0, Math.min(N - 1, Math.floor(prog * N)))
-          rows.push({ label: String(name), value: Math.round(prog * 100), color: rankDefs[idx]?.color || '#60a5fa' })
+          rows.push({ label: s.name, value: Math.round(prog * 100), color: rankDefs[idx]?.color || '#60a5fa' })
         }
       }
     }
@@ -144,7 +82,7 @@ export function BenchmarkStrengths({ bench, progress, difficultyIndex, height = 
     rows.sort((a, b) => b.value - a.value || a.label.localeCompare(b.label))
     const TOP_N = 18
     return rows.slice(0, TOP_N)
-  }, [normalized, level, rankDefs])
+  }, [categories, level, rankDefs])
 
   const labels = strength.map(r => r.label)
   const values = strength.map(r => r.value)

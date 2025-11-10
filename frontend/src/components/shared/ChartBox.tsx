@@ -13,7 +13,8 @@ import {
   Tooltip,
 } from 'chart.js'
 import { Info } from 'lucide-react'
-import React, { useMemo, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { useMemo, useState } from 'react'
 import { Line } from 'react-chartjs-2'
 import { useChartTheme } from '../../hooks/useChartTheme'
 import { Dropdown } from './Dropdown'
@@ -58,21 +59,23 @@ export type ChartBoxControls = {
   }
 }
 
+type ChartBoxProps = {
+  title: ReactNode
+  info?: ReactNode
+  children: ReactNode
+  controls?: ChartBoxControls
+  height?: number
+}
+
 export function ChartBox({
   title,
   info,
   children,
   controls,
   height = 280,
-}: {
-  title: React.ReactNode
-  info?: React.ReactNode
-  children: React.ReactNode
-  controls?: ChartBoxControls
-  height?: number
-}) {
+}: ChartBoxProps) {
   const [showInfo, setShowInfo] = useState(false)
-  const bodyStyle: React.CSSProperties = useMemo(() => ({ height: height - 44 }), [height]) // 44px header
+  const bodyStyle: CSSProperties = useMemo(() => ({ height: height - 44 }), [height]) // 44px header
   const titleText = typeof title === 'string' ? title : undefined
 
   return (
@@ -134,15 +137,13 @@ export function ChartBox({
 }
 
 // Convenience line chart component
+type LineChartProps = { labels: string[]; data: number[]; color?: string }
+
 export function LineChart({
   labels,
   data,
   color = 'rgb(16, 185, 129)',
-}: {
-  labels: string[]
-  data: number[]
-  color?: string
-}) {
+}: LineChartProps) {
   const theme = useChartTheme()
   const chartData = useMemo(() => ({
     labels,

@@ -1,59 +1,16 @@
 import { ChevronRight } from 'lucide-react'
-import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePageState } from '../../hooks/usePageState'
-import { getScenarioName } from '../../lib/utils'
+import { formatPct01, formatSeconds, getScenarioName } from '../../lib/utils'
 import type { ScenarioRecord } from '../../types/ipc'
 import { Dropdown } from '../shared/Dropdown'
 
-function fmtPct01(v: any) {
-  const n = typeof v === 'number' ? v : Number(v)
-  if (!isFinite(n)) return '—'
-  return (n * 100).toFixed(1) + '%'
-}
-function fmtSec(v: any) {
-  const n = typeof v === 'number' ? v : Number(v)
-  if (!isFinite(n)) return '—'
-  return `${n.toFixed(2)}s`
-}
+type FindingsProps = { strongest: ScenarioRecord[]; weakest: ScenarioRecord[] }
+type FindingsRowProps = { rec: ScenarioRecord }
 
-function normalize(arr: number[]): (x: number) => number {
-  const vals = arr.filter(n => Number.isFinite(n))
-  const min = Math.min(...vals)
-  const max = Math.max(...vals)
-  if (!isFinite(min) || !isFinite(max) || max === min) return () => 0.5
-  return (x: number) => (x - min) / (max - min)
-}
-
-export function Findings({ items }: { items: ScenarioRecord[] }) {
+export function Findings({ strongest, weakest }: FindingsProps) {
   const [openTab, setOpenTab] = usePageState<'analysis' | 'raw'>('findings:openIn', 'analysis')
   const navigate = useNavigate()
-
-  const ranked = useMemo(() => {
-    if (!Array.isArray(items) || items.length === 0) return [] as Array<{ rec: ScenarioRecord, score: number }>
-    // Build metric arrays
-    const scores = items.map(it => Number(it.stats['Score'] ?? 0))
-    const accs01 = items.map(it => Number(it.stats['Accuracy'] ?? 0)) // 0..1
-    const ttks = items.map(it => Number(it.stats['Real Avg TTK'] ?? NaN))
-
-    const nScore = normalize(scores)
-    const nAcc = normalize(accs01.map(a => a * 100)) // percent scale for stability
-    const nTtk = normalize(ttks)
-
-    // weights: emphasize score/accuracy, small penalty for long TTK
-    const wScore = 0.6, wAcc = 0.35, wTtk = 0.05
-
-    return items.map((rec, i) => {
-      const s = nScore(scores[i])
-      const a = nAcc(accs01[i] * 100)
-      const t = nTtk(ttks[i])
-      const composite = wScore * s + wAcc * a + wTtk * (1 - t) // lower TTK is better
-      return { rec, score: composite }
-    }).sort((a, b) => b.score - a.score)
-  }, [items])
-
-  const strongest = ranked.slice(0, Math.min(3, ranked.length))
-  const weakest = ranked.slice(-Math.min(3, ranked.length)).reverse()
 
   const openItem = (rec: ScenarioRecord) => {
     const file = encodeURIComponent(rec.filePath)
@@ -61,7 +18,7 @@ export function Findings({ items }: { items: ScenarioRecord[] }) {
     navigate(`/scenarios?file=${file}&tab=${tab}`)
   }
 
-  const Row = ({ rec }: { rec: ScenarioRecord }) => (
+  const Row = ({ rec }: FindingsRowProps) => (
     <div
       onClick={() => openItem(rec)}
       role="button"
@@ -74,8 +31,8 @@ export function Findings({ items }: { items: ScenarioRecord[] }) {
           <div className="text-sm text-[var(--text-primary)] font-medium">{getScenarioName(rec)}</div>
           <div className="text-xs text-[var(--text-secondary)]">
             Score: <b className="text-[var(--text-primary)]">{Math.round(Number(rec.stats['Score'] ?? 0))}</b>
-            {' '}• Acc: <b className="text-[var(--text-primary)]">{fmtPct01(rec.stats['Accuracy'])}</b>
-            {' '}• TTK: <b className="text-[var(--text-primary)]">{fmtSec(rec.stats['Real Avg TTK'])}</b>
+            {' '}• Acc: <b className="text-[var(--text-primary)]">{formatPct01(rec.stats['Accuracy'])}</b>
+            {' '}• TTK: <b className="text-[var(--text-primary)]">{formatSeconds(rec.stats['Real Avg TTK'])}</b>
           </div>
         </div>
         {/* Chevron on the right - non-interactive */}
@@ -102,14 +59,14 @@ export function Findings({ items }: { items: ScenarioRecord[] }) {
           <div className="text-xs text-[var(--text-secondary)] mb-2">Strongest</div>
           <div className="space-y-2">
             {strongest.length === 0 && <div className="text-xs text-[var(--text-secondary)]">No items.</div>}
-            {strongest.map(x => <Row key={x.rec.filePath} rec={x.rec} />)}
+            {strongest.map(rec => <Row key={rec.filePath} rec={rec} />)}
           </div>
         </div>
         <div>
           <div className="text-xs text-[var(--text-secondary)] mb-2">Weakest</div>
           <div className="space-y-2">
             {weakest.length === 0 && <div className="text-xs text-[var(--text-secondary)]">No items.</div>}
-            {weakest.map(x => <Row key={x.rec.filePath} rec={x.rec} />)}
+            {weakest.map(rec => <Row key={rec.filePath} rec={rec} />)}
           </div>
         </div>
       </div>

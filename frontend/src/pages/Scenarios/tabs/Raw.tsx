@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useMemo } from 'react'
 import type { ScenarioRecord } from '../../../types/ipc'
 
@@ -46,7 +47,7 @@ function hexToRgb(hex: string) {
   return `#000000`
 }
 
-function formatValue(key: string, raw: unknown): React.ReactNode {
+function formatValue(key: string, raw: unknown): ReactNode {
   // Special-case common fields
   if (key === 'Accuracy' && isNumber(raw)) {
     const pct = raw <= 1 ? raw * 100 : raw
@@ -110,7 +111,9 @@ function StatList({
   )
 }
 
-function RawBox({ title, children }: { title: string; children: React.ReactNode }) {
+type RawBoxProps = { title: string; children: ReactNode }
+
+function RawBox({ title, children }: RawBoxProps) {
   return (
     <div className="bg-[var(--bg-secondary)] rounded border border-[var(--border-primary)]">
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-primary)]">
@@ -123,7 +126,9 @@ function RawBox({ title, children }: { title: string; children: React.ReactNode 
   )
 }
 
-function OverviewCards({ stats }: { stats: Record<string, any> }) {
+type OverviewCardsProps = { stats: Record<string, any> }
+
+function OverviewCards({ stats }: OverviewCardsProps) {
   const keys: StatKey[] = ['Score', 'Kills', 'Hit Count', 'Accuracy']
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -141,7 +146,9 @@ function OverviewCards({ stats }: { stats: Record<string, any> }) {
   )
 }
 
-export function RawTab({ item }: { item: ScenarioRecord }) {
+type RawTabProps = { item: ScenarioRecord }
+
+export function RawTab({ item }: RawTabProps) {
   const stats = item.stats
 
   const categories = useMemo(() => CATEGORY_DEFS, [])

@@ -1,7 +1,9 @@
-import React from 'react';
+import type { ButtonHTMLAttributes } from 'react';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'accent' | 'danger'
 type Size = 'sm' | 'md'
+
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }
 
 export function Button({
   variant = 'secondary',
@@ -9,7 +11,7 @@ export function Button({
   className = '',
   children,
   ...rest
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
+}: ButtonProps) {
   const base = 'inline-flex items-center justify-center rounded transition-colors'
   const pad = size === 'md' ? 'px-3 py-2 text-sm' : 'px-2 py-1.5 text-sm'
   const styles: Record<Variant, string> = {

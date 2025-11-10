@@ -1,24 +1,23 @@
 import { Play } from 'lucide-react'
-import React, { useEffect, useMemo, useRef } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../../hooks/useStore'
 import { groupByScenario } from '../../lib/analysis/metrics'
-import { computeRecommendationScores } from '../../lib/benchmarks/recommendation'
-import { buildRankDefs, cellFill, gridCols, hexToRgba, initialThresholdBaseline, numberFmt } from '../../lib/benchmarks/utils'
+import { autoHiddenRanks, cellFill, computeRecommendationScores, gridCols, hexToRgba, numberFmt } from '../../lib/benchmarks'
 import { launchScenario } from '../../lib/internal'
 import { getScenarioName } from '../../lib/utils'
-import type { Benchmark } from '../../types/ipc'
+import type { BenchmarkProgress as ProgressModel } from '../../types/ipc'
+import { Button } from '../shared/Button'
+import { Dropdown } from '../shared/Dropdown'
+import { Toggle } from '../shared/Toggle'
 
-type Props = {
-  bench: Benchmark
-  difficultyIndex: number
-  progress: Record<string, any>
+type BenchmarkProgressProps = {
+  progress: ProgressModel
 }
 
-export function BenchmarkProgress({ bench, difficultyIndex, progress }: Props) {
-  const difficulty = bench.difficulties[difficultyIndex]
-  const rankDefs = useMemo(() => buildRankDefs(difficulty, progress), [difficulty, progress])
+export function BenchmarkProgress({ progress }: BenchmarkProgressProps) {
+  const rankDefs = progress?.ranks || []
 
-  const categories = progress?.categories as Record<string, any>
+  const categories = progress?.categories || []
 
   // Global data: recent scenarios and sessions to inform recommendations
   const scenarios = useStore(s => s.scenarios)
@@ -68,87 +67,20 @@ export function BenchmarkProgress({ bench, difficultyIndex, progress }: Props) {
     </span>
   )
 
-  const metaDefs = useMemo(() => {
-    const defs: Array<{
-      catName: string
-      catColor?: string
-      subDefs: Array<{ name: string; count: number; color?: string }>
-    }> = []
-    for (const c of difficulty.categories || []) {
-      const catName = (c as any)?.categoryName as string
-      const catColor = (c as any)?.color as string | undefined
-      const subs = Array.isArray((c as any)?.subcategories) ? (c as any).subcategories : []
-      const subDefs = subs.map((s: any) => ({
-        name: String(s?.subcategoryName ?? ''),
-        count: Number(s?.scenarioCount ?? 0),
-        color: s?.color as string | undefined
-      }))
-      defs.push({ catName, catColor, subDefs })
-    }
-    return defs
-  }, [difficulty])
-
   const grid = gridCols
 
-  const overallRankName = rankDefs[(progress?.overall_rank ?? 0) - 1]?.name || '—'
-
-  // Map API progress to metadata strictly by order and counts; ignore API category names
-  const normalized = useMemo(() => {
-    type ScenarioEntry = [string, any]
-    const result: Array<{
-      catName: string
-      catColor?: string
-      groups: Array<{ name: string; color?: string; scenarios: ScenarioEntry[] }>
-    }> = []
-
-    // Flatten all scenarios from the API in their given order
-    const flat: ScenarioEntry[] = []
-    if (categories) {
-      for (const cat of Object.values(categories)) {
-        const scenEntries = Object.entries((cat as any)?.scenarios || {}) as ScenarioEntry[]
-        flat.push(...scenEntries)
-      }
-    }
-
-    let pos = 0
-    for (let i = 0; i < metaDefs.length; i++) {
-      const { catName, catColor, subDefs } = metaDefs[i]
-      const groups: Array<{ name: string; color?: string; scenarios: ScenarioEntry[] }> = []
-
-      if (subDefs.length > 0) {
-        for (const sd of subDefs) {
-          const take = Math.max(0, Math.min(sd.count, flat.length - pos))
-          const scenarios = take > 0 ? flat.slice(pos, pos + take) : []
-          pos += take
-          groups.push({ name: sd.name, color: sd.color, scenarios })
-        }
-      } else {
-        // Fallback: no subcategories defined — keep an empty placeholder group
-        groups.push({ name: '', color: undefined, scenarios: [] })
-      }
-
-      // Append any leftovers at the very end (final category only)
-      if (i === metaDefs.length - 1 && pos < flat.length) {
-        groups.push({ name: '', color: undefined, scenarios: flat.slice(pos) })
-        pos = flat.length
-      }
-
-      result.push({ catName, catColor, groups })
-    }
-
-    return result
-  }, [categories, metaDefs])
+  const overallRankName = rankDefs[(progress?.overallRank ?? 0) - 1]?.name || '—'
 
   // Build name sets and historical metrics used for recommendations
   const wantedNames = useMemo(() => {
     const set = new Set<string>()
-    for (const { groups } of normalized) {
+    for (const { groups } of categories) {
       for (const g of groups) {
-        for (const [name] of g.scenarios) set.add(String(name))
+        for (const s of g.scenarios) set.add(s.name)
       }
     }
     return Array.from(set)
-  }, [normalized])
+  }, [categories])
 
   const byName = useMemo(() => groupByScenario(scenarios), [scenarios])
   const lastSession = useMemo(() => sessions[0] ?? null, [sessions])
@@ -176,29 +108,84 @@ export function BenchmarkProgress({ bench, difficultyIndex, progress }: Props) {
   // Recommendation score per scenario name (base score without threshold proximity)
   const recScore = useMemo(() => computeRecommendationScores({ wantedNames, byName, lastPlayedMs, lastSessionCount, sessions }), [wantedNames, byName, lastPlayedMs, lastSessionCount, sessions])
 
+  // Ranks visibility controls
+  const [autoHideCleared, setAutoHideCleared] = useState<boolean>(true)
+  const [manuallyHidden, setManuallyHidden] = useState<Set<number>>(() => new Set())
+  // Desired number of rank columns to keep visible (when auto-hide is enabled)
+  const [visibleRankCount, setVisibleRankCount] = useState<number>(4)
+
+  // Flatten all scenarios visible in this benchmark view
+  const allScenarios = useMemo(() => {
+    const list: Array<{ scenarioRank: number }> = []
+    for (const { groups } of categories) {
+      for (const g of groups) {
+        for (const s of g.scenarios) list.push({ scenarioRank: Number(s.scenarioRank || 0) })
+      }
+    }
+    return list
+  }, [categories])
+
+  // Auto-hide any rank where ALL scenarios have surpassed that rank
+  const autoHidden = useMemo(() => {
+    const n = rankDefs.length
+    // Precompute flat scenario rank array
+    const ranksArr = allScenarios.map(s => Number(s.scenarioRank || 0))
+    return autoHiddenRanks(n, ranksArr, autoHideCleared, visibleRankCount)
+  }, [rankDefs.length, allScenarios, autoHideCleared, visibleRankCount])
+
+  // Combine manual + auto hidden sets
+  const effectiveHidden = useMemo(() => {
+    const out = new Set<number>()
+    manuallyHidden.forEach(i => out.add(i))
+    autoHidden.forEach(i => out.add(i))
+    return out
+  }, [manuallyHidden, autoHidden])
+
+  // Compute the visible rank indices and rank defs. Ensure at least one is visible.
+  const visibleRankIndices = useMemo(() => {
+    const n = rankDefs.length
+    const all = Array.from({ length: n }, (_, i) => i)
+    let vis = all.filter(i => !effectiveHidden.has(i))
+    if (vis.length === 0 && n > 0) vis = [n - 1] // always show the top rank if everything would be hidden
+    return vis
+  }, [rankDefs.length, effectiveHidden])
+
+  const visibleRanks = useMemo(() => visibleRankIndices.map(i => rankDefs[i]), [visibleRankIndices, rankDefs])
+
+  // Handlers for manual toggles
+  const toggleManualRank = (idx: number) => {
+    setManuallyHidden(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+  const resetManual = () => setManuallyHidden(new Set())
+
   return (
     <div className="space-y-4">
       <div className="text-sm text-[var(--text-primary)]">
-        Overall Rank: <span className="font-medium">{overallRankName}</span> · Benchmark Progress: <span className="font-medium">{numberFmt(progress?.benchmark_progress)}</span>
+        Overall Rank: <span className="font-medium">{overallRankName}</span> · Benchmark Progress: <span className="font-medium">{numberFmt(progress?.benchmarkProgress)}</span>
       </div>
 
       {categories && (
         <div className="overflow-x-auto" ref={containerRef}>
           <div className="min-w-max">
             {/* Single sticky header aligned with all categories */}
-            <div className="sticky top-0 z-10">
+            <div className="sticky top-0">
               <div className="border border-[var(--border-primary)] rounded bg-[var(--bg-tertiary)] overflow-hidden">
                 <div className="flex gap-2 px-2 py-2">
                   {/* Placeholders for category and subcategory label columns */}
                   <div className="w-8 flex-shrink-0" />
                   <div className="w-8 flex-shrink-0" />
                   <div className="flex-1">
-                    <div className="grid gap-1" style={{ gridTemplateColumns: grid(rankDefs.length) }}>
+                    <div className="grid gap-1" style={{ gridTemplateColumns: grid(visibleRanks.length) }}>
                       <div className="text-[11px] text-[var(--text-secondary)] uppercase tracking-wide">Scenario</div>
                       <div className="text-[11px] text-[var(--text-secondary)] uppercase tracking-wide text-center" title="Recommendation score (negative means: switch)">Recom</div>
                       <div className="text-[11px] text-[var(--text-secondary)] uppercase tracking-wide text-center">Play</div>
                       <div className="text-[11px] text-[var(--text-secondary)] uppercase tracking-wide">Score</div>
-                      {rankDefs.map(r => (
+                      {visibleRanks.map(r => (
                         <div key={r.name} className="text-[11px] text-[var(--text-secondary)] uppercase tracking-wide text-center">{r.name}</div>
                       ))}
                     </div>
@@ -208,9 +195,9 @@ export function BenchmarkProgress({ bench, difficultyIndex, progress }: Props) {
             </div>
 
             {/* Category cards content (no repeated headers) */}
-            {normalized.map(({ catName, catColor, groups }) => {
+            {categories.map(({ name: catName, color: catColor, groups }) => {
               const ranks = rankDefs
-              const cols = grid(ranks.length)
+              const cols = grid(visibleRanks.length)
               return (
                 <div key={catName} className="border border-[var(--border-primary)] rounded bg-[var(--bg-tertiary)] overflow-hidden mt-3">
                   <div className="flex">
@@ -231,29 +218,30 @@ export function BenchmarkProgress({ bench, difficultyIndex, progress }: Props) {
                           </div>
                           <div className="flex-1 min-w-max">
                             <div className="grid gap-1" style={{ gridTemplateColumns: cols }}>
-                              {g.scenarios.map(([sName, s]) => {
-                                const achieved = Number(s?.scenario_rank || 0)
-                                const maxes: number[] = Array.isArray(s?.rank_maxes) ? s.rank_maxes : []
-                                const raw = Number(s?.score || 0)
-                                const score = raw / 100 // API returns score * 100; thresholds are in natural units
+                              {g.scenarios.map((s) => {
+                                const sName = s.name
+                                const achieved = s.scenarioRank
+                                const maxes: number[] = s.thresholds
+                                const score = s.score
                                 // Threshold proximity contribution: push when close to next rank
                                 let thPts = 0
-                                if (Array.isArray(maxes) && maxes.length > 0) {
-                                  const idx = Math.max(0, Math.min(maxes.length, achieved))
-                                  const prev = idx > 0 ? (maxes[idx - 1] ?? 0) : initialThresholdBaseline(maxes)
-                                  const next = maxes[idx] ?? null
+                                if (maxes.length > 1) {
+                                  const rankN = ranks.length
+                                  const idx = Math.max(0, Math.min(rankN, achieved))
+                                  const prev = maxes[idx] ?? 0
+                                  const next = maxes[idx + 1] ?? null
                                   if (next != null && next > prev) {
                                     const frac = Math.max(0, Math.min(1, (score - prev) / (next - prev)))
                                     thPts = 40 * frac
                                   }
                                   // Rank deficiency: prioritize weaker scenarios
-                                  const achievedNorm = Math.max(0, Math.min(1, achieved / Math.max(1, maxes.length)))
+                                  const achievedNorm = Math.max(0, Math.min(1, achieved / Math.max(1, rankN)))
                                   thPts += 20 * (1 - achievedNorm)
                                 }
-                                const base = recScore.get(String(sName)) ?? 0
+                                const base = recScore.get(sName) ?? 0
                                 const totalRec = Math.round(base + thPts)
                                 return (
-                                  <React.Fragment key={sName}>
+                                  <Fragment key={sName}>
                                     <div className="text-[13px] text-[var(--text-primary)] truncate flex items-center">{sName}</div>
                                     <div className="text-[12px] text-[var(--text-primary)] flex items-center justify-center gap-1" title="Recommendation score">
                                       {triangle(totalRec >= 0 ? 'up' : 'down', totalRec >= 0 ? '--success' : '--error')}
@@ -269,19 +257,19 @@ export function BenchmarkProgress({ bench, difficultyIndex, progress }: Props) {
                                       </button>
                                     </div>
                                     <div className="text-[12px] text-[var(--text-primary)] flex items-center">{numberFmt(score)}</div>
-                                    {ranks.map((r, i) => {
-                                      const fill = cellFill(i, score, maxes)
+                                    {visibleRankIndices.map((ri) => {
+                                      const r = ranks[ri]
+                                      const fill = cellFill(ri, score, maxes)
                                       const border = r.color
-                                      const value = maxes?.[i]
+                                      const value = maxes?.[ri + 1]
                                       return (
-                                        <div key={r.name + i} className="text-[12px] text-center rounded px-2 py-1 relative overflow-hidden flex items-center justify-center" style={{ border: `1px solid ${border}` }}>
+                                        <div key={r.name + ri} className="text-[12px] text-center rounded px-2 py-1 relative overflow-hidden flex items-center justify-center" style={{ border: `1px solid ${border}` }}>
                                           <div className="absolute inset-y-0 left-0" style={{ width: `${Math.round(fill * 100)}%`, background: hexToRgba(r.color, 0.35) }} />
                                           <span className="relative z-10">{value != null ? numberFmt(value) : '—'}</span>
                                         </div>
                                       )
-                                    }
-                                    )}
-                                  </React.Fragment>
+                                    })}
+                                  </Fragment>
                                 )
                               })}
                             </div>
@@ -296,6 +284,52 @@ export function BenchmarkProgress({ bench, difficultyIndex, progress }: Props) {
           </div>
         </div>
       )}
+      {/* Controls panel: placed under the progress content */}
+      <div className="bg-[var(--bg-secondary)] rounded border border-[var(--border-primary)]">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-primary)]">
+          <div className="text-sm font-medium text-[var(--text-primary)]">Rank columns</div>
+          <div className="flex items-center gap-3">
+            <Toggle
+              size="sm"
+              label="Auto-hide earlier ranks"
+              checked={autoHideCleared}
+              onChange={setAutoHideCleared}
+            />
+            <Dropdown
+              size="sm"
+              label="Keep columns visible"
+              ariaLabel="Target number of visible rank columns"
+              value={String(visibleRankCount)}
+              onChange={v => setVisibleRankCount(Math.max(1, parseInt(v || '1', 10) || 1))}
+              options={Array.from({ length: Math.max(9, rankDefs.length) }, (_, i) => i + 1).map(n => ({ label: String(n), value: String(n) }))}
+            />
+            <Button size="sm" variant="ghost" onClick={resetManual} title="Reset manual visibility">Reset</Button>
+          </div>
+        </div>
+        <div className="p-3">
+          <div className="text-xs text-[var(--text-secondary)] mb-2">Toggle columns to show/hide. Auto-hidden columns are disabled.</div>
+          <div className="flex flex-wrap gap-1">
+            {rankDefs.map((r, i) => {
+              const auto = autoHidden.has(i)
+              const manualHidden = manuallyHidden.has(i)
+              const visible = !(auto || manualHidden)
+              return (
+                <Button
+                  key={r.name + i}
+                  size="sm"
+                  variant={visible ? 'secondary' : 'ghost'}
+                  onClick={() => toggleManualRank(i)}
+                  disabled={auto}
+                  className={auto ? 'opacity-60 cursor-not-allowed' : ''}
+                  title={auto ? 'Hidden automatically (all scenarios are past this rank)' : (visible ? 'Click to hide this column' : 'Click to show this column')}
+                >
+                  {r.name}
+                </Button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

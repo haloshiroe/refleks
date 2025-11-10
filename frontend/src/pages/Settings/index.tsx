@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { BrowserOpenURL } from '../../../wailsjs/runtime'
 import { Button, Dropdown } from '../../components'
@@ -258,7 +259,9 @@ export function SettingsPage() {
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+type FieldProps = { label: string; children: ReactNode }
+
+function Field({ label, children }: FieldProps) {
   return (
     <label className="flex items-center gap-3">
       <div className="w-48 text-sm text-[var(--text-primary)]">{label}</div>

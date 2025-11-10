@@ -2,14 +2,18 @@ import { useMemo } from 'react'
 import { Doughnut } from 'react-chartjs-2'
 import { useChartTheme } from '../../hooks/useChartTheme'
 import { usePageState } from '../../hooks/usePageState'
-import { buildRankDefs } from '../../lib/benchmarks/utils'
-import type { Benchmark } from '../../types/ipc'
+import type { Benchmark, BenchmarkProgress } from '../../types/ipc'
 import { ChartBox } from '../shared/ChartBox'
 
-export function RankDistributionDonut({ bench, progress, difficultyIndex, height = 360 }:
-  { bench: Benchmark; progress: Record<string, any>; difficultyIndex: number; height?: number }) {
-  const difficulty = bench.difficulties[Math.min(Math.max(0, difficultyIndex), bench.difficulties.length - 1)]
-  const rankDefs = useMemo(() => buildRankDefs(difficulty, progress), [difficulty, progress])
+type RankDistributionDonutProps = {
+  bench: Benchmark
+  progress: BenchmarkProgress
+  difficultyIndex: number
+  height?: number
+}
+
+export function RankDistributionDonut({ bench, progress, difficultyIndex, height = 360 }: RankDistributionDonutProps) {
+  const rankDefs = progress?.ranks || []
   const theme = useChartTheme()
 
   type ScopeLevel = 'all' | 'category' | 'subcategory'
@@ -18,88 +22,25 @@ export function RankDistributionDonut({ bench, progress, difficultyIndex, height
   const [catIdx, setCatIdx] = usePageState<number>(`bench:${benchKey}:diff:${difficultyIndex}:ranks:catIdx`, 0)
   const [subIdx, setSubIdx] = usePageState<number>(`bench:${benchKey}:diff:${difficultyIndex}:ranks:subIdx`, 0)
 
-  // Build metadata + normalized mapping like BenchmarkProgress to resolve scenario lists per scope
-  const metaDefs = useMemo(() => {
-    const defs: Array<{
-      catName: string
-      catColor?: string
-      subDefs: Array<{ name: string; count: number; color?: string }>
-    }> = []
-    for (const c of difficulty?.categories || []) {
-      const catName = String((c as any)?.categoryName ?? '')
-      const catColor = (c as any)?.color as string | undefined
-      const subs = Array.isArray((c as any)?.subcategories) ? (c as any).subcategories : []
-      const subDefs = subs.map((s: any) => ({
-        name: String(s?.subcategoryName ?? ''),
-        count: Number(s?.scenarioCount ?? 0),
-        color: s?.color as string | undefined,
-      }))
-      defs.push({ catName, catColor, subDefs })
-    }
-    return defs
-  }, [difficulty])
-
-  const normalized = useMemo(() => {
-    type ScenarioEntry = [string, any]
-    const categories = progress?.categories as Record<string, any> | undefined
-    const result: Array<{
-      catName: string
-      catColor?: string
-      groups: Array<{ name: string; color?: string; scenarios: ScenarioEntry[] }>
-    }> = []
-
-    const flat: ScenarioEntry[] = []
-    if (categories) {
-      for (const cat of Object.values(categories)) {
-        const scenEntries = Object.entries((cat as any)?.scenarios || {}) as ScenarioEntry[]
-        flat.push(...scenEntries)
-      }
-    }
-
-    let pos = 0
-    for (let i = 0; i < metaDefs.length; i++) {
-      const { catName, catColor, subDefs } = metaDefs[i]
-      const groups: Array<{ name: string; color?: string; scenarios: ScenarioEntry[] }> = []
-
-      if (subDefs.length > 0) {
-        for (const sd of subDefs) {
-          const take = Math.max(0, Math.min(sd.count, flat.length - pos))
-          const scenarios = take > 0 ? flat.slice(pos, pos + take) : []
-          pos += take
-          groups.push({ name: sd.name, color: sd.color, scenarios })
-        }
-      } else {
-        groups.push({ name: '', color: undefined, scenarios: [] })
-      }
-
-      if (i === metaDefs.length - 1 && pos < flat.length) {
-        groups.push({ name: '', color: undefined, scenarios: flat.slice(pos) })
-        pos = flat.length
-      }
-
-      result.push({ catName, catColor, groups })
-    }
-
-    return result
-  }, [progress, metaDefs])
+  const categories = progress?.categories || []
 
   const scopeScenarios = useMemo(() => {
-    if (level === 'all') {
-      return normalized.flatMap(c => c.groups.flatMap(g => g.scenarios))
-    }
-    const c = normalized[Math.min(Math.max(0, catIdx), Math.max(0, normalized.length - 1))]
-    if (!c) return []
-    if (level === 'category') return c.groups.flatMap(g => g.scenarios)
-    const g = c.groups[Math.min(Math.max(0, subIdx), Math.max(0, c.groups.length - 1))]
-    return g ? g.scenarios : []
-  }, [normalized, level, catIdx, subIdx])
+    const normCatIdx = Math.min(Math.max(0, catIdx), Math.max(0, categories.length - 1))
+    const cat = categories[normCatIdx]
+    if (level === 'all') return categories.flatMap(c => c.groups.flatMap(g => g.scenarios))
+    if (!cat) return []
+    if (level === 'category') return cat.groups.flatMap(g => g.scenarios)
+    const normSubIdx = Math.min(Math.max(0, subIdx), Math.max(0, (cat.groups?.length || 1) - 1))
+    const g = cat.groups?.[normSubIdx]
+    return g?.scenarios || []
+  }, [categories, level, catIdx, subIdx])
 
   const counts = useMemo(() => {
     const n = rankDefs.length
     const arr = Array.from({ length: n }, () => 0)
     let below = 0
-    for (const [_, s] of scopeScenarios) {
-      const r = Number(s?.scenario_rank || 0)
+    for (const s of scopeScenarios) {
+      const r = Number(s?.scenarioRank || 0)
       if (r <= 0) below++
       else arr[Math.min(n, r) - 1]++
     }
@@ -146,9 +87,9 @@ export function RankDistributionDonut({ bench, progress, difficultyIndex, height
   }), [theme])
 
   // Build controls for scope selection
-  const catOptions = normalized.map((c, i) => ({ label: c.catName || `Category ${i + 1}`, value: String(i) }))
+  const catOptions = categories.map((c, i) => ({ label: c.name || `Category ${i + 1}`, value: String(i) }))
   const subOptions = (() => {
-    const c = normalized[Math.min(Math.max(0, catIdx), Math.max(0, normalized.length - 1))]
+    const c = categories[Math.min(Math.max(0, catIdx), Math.max(0, categories.length - 1))]
     return (c?.groups || []).map((g, i) => ({ label: g.name || `Group ${i + 1}`, value: String(i) }))
   })()
 

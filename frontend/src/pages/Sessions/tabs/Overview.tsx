@@ -4,11 +4,14 @@ import { ChartBox, Findings, MetricsControls, MetricsLineChart, PerformanceVsSen
 import { useOpenedBenchmarkProgress } from '../../../hooks/useOpenedBenchmarkProgress'
 import { usePageState } from '../../../hooks/usePageState'
 import { useUIState } from '../../../hooks/useUIState'
+import { computeFindings } from '../../../lib/analysis/findings'
 import { buildChartSeries, groupByScenario } from '../../../lib/analysis/metrics'
 import { getScenarioName } from '../../../lib/utils'
 import type { Session } from '../../../types/domain'
 
-export function OverviewTab({ session }: { session: Session | null }) {
+type OverviewTabProps = { session: Session | null }
+
+export function OverviewTab({ session }: OverviewTabProps) {
   const items = session?.items ?? []
   // Group per scenario name and collect metrics (newest -> oldest order)
   const byName = useMemo(() => groupByScenario(items), [items])
@@ -73,6 +76,9 @@ export function OverviewTab({ session }: { session: Session | null }) {
 
   // Scenario progress UI is encapsulated in its own component below
 
+  const selectedItems = useMemo(() => items.filter(it => getScenarioName(it) === selectedName), [items, selectedName])
+  const { strongest, weakest } = useMemo(() => computeFindings(selectedItems), [selectedItems])
+
   return (
     <div className="space-y-3">
       {/* Global controls for this tab */}
@@ -117,7 +123,6 @@ export function OverviewTab({ session }: { session: Session | null }) {
       <ScenarioBenchmarkProgress
         bench={bench || null}
         progress={benchProgress}
-        difficultyIndex={benchDifficultyIdx}
         scenarioName={selectedName}
         selectedBenchId={selectedBenchId}
         loading={benchLoading}
@@ -125,7 +130,7 @@ export function OverviewTab({ session }: { session: Session | null }) {
       />
 
       {/* Findings: best/worst runs for this scenario in this session */}
-      <Findings items={items.filter(it => getScenarioName(it) === selectedName)} />
+      <Findings strongest={strongest} weakest={weakest} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <PerformanceVsSensChart items={items} scenarioName={selectedName} />

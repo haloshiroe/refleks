@@ -6,7 +6,7 @@ export function CheckForUpdates():Promise<models.UpdateInfo>;
 
 export function DownloadAndInstallUpdate(arg1:string):Promise<boolean|string>;
 
-export function GetBenchmarkProgress(arg1:number):Promise<string>;
+export function GetBenchmarkProgress(arg1:number):Promise<models.BenchmarkProgress>;
 
 export function GetBenchmarks():Promise<Array<models.Benchmark>>;
 
@@ -19,8 +19,6 @@ export function GetRecentScenarios(arg1:number):Promise<Array<models.ScenarioRec
 export function GetSettings():Promise<models.Settings>;
 
 export function GetVersion():Promise<string>;
-
-export function Greet(arg1:string):Promise<string>;
 
 export function LaunchKovaaksPlaylist(arg1:string):Promise<boolean|string>;
 
