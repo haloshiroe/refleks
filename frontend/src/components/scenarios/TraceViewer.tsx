@@ -2,6 +2,7 @@ import { Pause, Play, RotateCcw, SkipBack, SkipForward } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePageState } from '../../hooks/usePageState';
 import type { Point } from '../../types/ipc';
+import { Dropdown } from '../shared/Dropdown';
 import { SegmentedControl } from '../shared/SegmentedControl';
 import { Toggle } from '../shared/Toggle';
 
@@ -40,6 +41,8 @@ export function TraceViewer({ points, stats, highlight, markers, seekToTs, cente
   useEffect(() => {
     autoFollowRef.current = autoFollow
   }, [autoFollow])
+
+  const [clickMarkersMode, setClickMarkersMode] = usePageState<'all' | 'down' | 'none'>('trace:clickMarkers', 'down')
 
   // Base data bounds/resolution
   const base = useMemo(() => {
@@ -304,18 +307,21 @@ export function TraceViewer({ points, stats, highlight, markers, seekToTs, cente
     }
 
     // Draw left-click press/release markers (white, smaller).
-    if (drawn.length >= 1) {
-      const markers: { x: number; y: number; pressed: boolean }[] = []
+    // Controlled by clickMarkersMode ('all' | 'down' | 'none')
+    if (drawn.length >= 1 && clickMarkersMode !== 'none') {
+      const clickMarkersArr: { x: number; y: number; pressed: boolean }[] = []
       let prevLeft = ((drawn[0].buttons ?? 0) & 1) !== 0
-      if (prevLeft) markers.push({ x: drawn[0].x, y: drawn[0].y, pressed: true })
+      if (prevLeft) clickMarkersArr.push({ x: drawn[0].x, y: drawn[0].y, pressed: true })
       for (let i = 1; i < drawn.length; i++) {
         const p = drawn[i]
         const curLeft = ((p.buttons ?? 0) & 1) !== 0
-        if (curLeft !== prevLeft) markers.push({ x: p.x, y: p.y, pressed: curLeft })
+        if (curLeft !== prevLeft) clickMarkersArr.push({ x: p.x, y: p.y, pressed: curLeft })
         prevLeft = curLeft
       }
 
-      for (const m of markers) {
+      const filteredClickMarkers = clickMarkersArr.filter(m => clickMarkersMode === 'all' || (clickMarkersMode === 'down' && m.pressed))
+
+      for (const m of filteredClickMarkers) {
         const sx = toX(m.x)
         const sy = toY(m.y)
         const col = 'rgba(255,255,255,0.95)'
@@ -392,7 +398,7 @@ export function TraceViewer({ points, stats, highlight, markers, seekToTs, cente
         }
       }
     }
-  }, [drawn, base, zoom, playIndex, trailMode, transformTick])
+  }, [drawn, base, zoom, playIndex, trailMode, transformTick, clickMarkersMode])
 
   // Events: resize
   useEffect(() => {
@@ -406,35 +412,60 @@ export function TraceViewer({ points, stats, highlight, markers, seekToTs, cente
     return () => window.removeEventListener('resize', draw)
   }, [])
 
-  // Wheel zoom
+  // Wheel zoom: only when hovering inside the drawn bounding box (not the whole canvas/wrapper)
   useEffect(() => {
-    const wrap = wrapRef.current
-    if (!wrap) return
+    const canvas = canvasRef.current
+    if (!canvas) return
     const onWheel = (e: WheelEvent) => {
-      e.preventDefault()
-      const rect = wrap.getBoundingClientRect()
+      const rect = canvas.getBoundingClientRect()
       const mx = e.clientX - rect.left
       const my = e.clientY - rect.top
       const cssW = rect.width
       const cssH = rect.height
+
+      // Reconstruct the same transform used in the draw effect
       const pad = 8
-      const fitScale = Math.min((cssW - pad * 2) / base.w, (cssH - pad * 2) / base.h)
-      const oldScale = fitScale * zoom
-      const newZoom = clamp(zoom * Math.pow(1.001, -e.deltaY), 0.1, 50)
-      const newScale = fitScale * newZoom
+      const srcW = base.w
+      const srcH = base.h
+      const fitScale = Math.min((cssW - pad * 2) / srcW, (cssH - pad * 2) / srcH)
+      const scale = fitScale * clamp(zoom, 0.1, 50)
       const screenCX = cssW / 2
       const screenCY = cssH / 2
       if (!centerRef.current) centerRef.current = { cx: (base as any).cx ?? 0, cy: (base as any).cy ?? 0 }
-      const c = centerRef.current
-      const dataX = c.cx + (mx - screenCX) / oldScale
-      const dataY = c.cy + (my - screenCY) / oldScale
+      const { cx, cy } = centerRef.current
+
+      const ox = (base as any).minX ?? 0
+      const oy = (base as any).minY ?? 0
+      const bx0 = screenCX + (ox - cx) * scale
+      const by0 = screenCY + (oy - cy) * scale
+      const bx1 = screenCX + (ox + srcW - cx) * scale
+      const by1 = screenCY + (oy + srcH - cy) * scale
+      const rx = Math.min(bx0, bx1)
+      const ry = Math.min(by0, by1)
+      const rw = Math.abs(bx1 - bx0)
+      const rh = Math.abs(by1 - by0)
+
+      // If mouse is outside the visible bounding box, ignore the wheel (fall through to page scroll)
+      if (mx < rx || mx > rx + rw || my < ry || my > ry + rh) {
+        return
+      }
+
+      e.preventDefault()
+
+      const oldScale = scale
+      const newZoom = clamp(zoom * Math.pow(1.001, -e.deltaY), 0.1, 50)
+      const newScale = fitScale * newZoom
+
+      // Zoom towards cursor position within the box
+      const dataX = cx + (mx - screenCX) / oldScale
+      const dataY = cy + (my - screenCY) / oldScale
       const newCx = dataX - (mx - screenCX) / newScale
       const newCy = dataY - (my - screenCY) / newScale
       centerRef.current = { cx: newCx, cy: newCy }
       setZoom(newZoom)
     }
-    wrap.addEventListener('wheel', onWheel, { passive: false })
-    return () => wrap.removeEventListener('wheel', onWheel as any)
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    return () => canvas.removeEventListener('wheel', onWheel as any)
   }, [zoom, base])
 
   // Drag pan
@@ -584,6 +615,16 @@ export function TraceViewer({ points, stats, highlight, markers, seekToTs, cente
               label="Follow"
               checked={autoFollow}
               onChange={(v: boolean) => setAutoFollow(v)}
+            />
+            <Dropdown
+              label="Clicks"
+              value={clickMarkersMode}
+              onChange={(v: string) => setClickMarkersMode(v as 'all' | 'down' | 'none')}
+              options={[
+                { label: 'All', value: 'all' },
+                { label: 'Down only', value: 'down' },
+                { label: 'None', value: 'none' },
+              ]}
             />
             <span className="hidden sm:inline">Zoom: {Math.round(zoom * 100)}%</span>
             <span>Samples: <b className="text-[var(--text-primary)]">{points.length.toLocaleString()}</b></span>
