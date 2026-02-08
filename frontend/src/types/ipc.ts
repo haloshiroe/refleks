@@ -1,5 +1,5 @@
-export type Point = {
-  ts: any
+export type MousePoint = {
+  ts: number
   x: number
   y: number
   buttons?: number
@@ -10,7 +10,9 @@ export interface ScenarioRecord {
   fileName: string
   stats: Record<string, any>
   events: string[][]
-  mouseTrace?: Array<Point>
+  mouseTrace?: Array<MousePoint>
+  traceData?: string
+  hasTrace?: boolean
 }
 
 export interface BenchmarkDifficulty {
@@ -25,6 +27,7 @@ export interface Benchmark {
   abbreviation: string
   color: string
   spreadsheetURL: string
+  dateAdded?: string
   difficulties: BenchmarkDifficulty[]
 }
 
@@ -38,12 +41,14 @@ export interface ProgressScenario {
   score: number
   scenarioRank: number
   thresholds: number[]
+  energy?: number
 }
 
 export interface ProgressGroup {
   name?: string
   color?: string
   scenarios: ProgressScenario[]
+  energy?: number
 }
 
 export interface ProgressCategory {
@@ -59,19 +64,35 @@ export interface BenchmarkProgress {
   categories: ProgressCategory[]
 }
 
-import type { Theme } from '../lib/theme'
+import type { Font, Theme } from '../lib/theme'
 
 export interface Settings {
   steamInstallDir?: string
   steamIdOverride?: string
+  personaNameOverride?: string
   statsDir: string
   tracesDir: string
   sessionGapMinutes: number
   theme: Theme
+  font: Font
   favoriteBenchmarks?: string[]
   mouseTrackingEnabled?: boolean
   mouseBufferMinutes?: number
   maxExistingOnStart?: number
+  autostartEnabled?: boolean
+  geminiApiKey?: string
+  scenarioNotes?: Record<string, ScenarioNote>
+  sessionNotes?: Record<string, SessionNote>
+}
+
+export interface ScenarioNote {
+  notes: string
+  sens: string
+}
+
+export interface SessionNote {
+  name: string
+  notes: string
 }
 
 export interface UpdateInfo {
@@ -80,4 +101,15 @@ export interface UpdateInfo {
   hasUpdate: boolean
   downloadUrl?: string
   releaseNotes?: string
+}
+
+export interface KovaaksScoreAttributes {
+  score: number
+  challengeStart: string
+}
+
+export interface KovaaksLastScore {
+  id: string
+  type: string
+  attributes: KovaaksScoreAttributes
 }

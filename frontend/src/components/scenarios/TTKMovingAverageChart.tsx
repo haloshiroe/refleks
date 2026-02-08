@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
 import { Line } from 'react-chartjs-2'
-import { ChartBox } from '..'
 import { useChartTheme } from '../../hooks/useChartTheme'
-import { CHART_DECIMALS, extractChartValue, formatNumber, formatSeconds, MISSING_STR } from '../../lib/utils'
-import { TTKMovingAverageDetails } from './TTKMovingAverageDetails'
+import { usePageState } from '../../hooks/usePageState'
+import { CHART_DECIMALS, MISSING_STR } from '../../lib/constants'
+import { extractChartValue, formatNumber, formatSeconds } from '../../lib/utils'
+import { ChartBox } from '../shared/ChartBox'
 
 type TTKMovingAverageChartProps = {
   labels: string[]
@@ -23,6 +24,7 @@ type TTKMovingAverageChartProps = {
 
 export function TTKMovingAverageChart({ labels, realTTK, ma5, movingAvg }: TTKMovingAverageChartProps) {
   const colors = useChartTheme()
+  const [isExpanded, setIsExpanded] = usePageState('analysis:ttk-ma:expanded', false)
   const trend = useMemo(() => ma5.map((_, i) => (movingAvg.intercept ?? 0) + movingAvg.slope * i), [ma5, movingAvg])
   const data = useMemo(() => ({
     labels,
@@ -30,8 +32,8 @@ export function TTKMovingAverageChart({ labels, realTTK, ma5, movingAvg }: TTKMo
       {
         label: 'TTK (s)',
         data: realTTK,
-        borderColor: 'rgb(239,68,68)',
-        backgroundColor: 'rgba(239,68,68,0.2)',
+        borderColor: colors.danger,
+        backgroundColor: colors.dangerSoft,
         yAxisID: 'y',
         tension: 0.15,
         pointRadius: 0,
@@ -39,8 +41,8 @@ export function TTKMovingAverageChart({ labels, realTTK, ma5, movingAvg }: TTKMo
       {
         label: 'MA(5) TTK',
         data: ma5,
-        borderColor: 'rgb(59,130,246)',
-        backgroundColor: 'rgba(59,130,246,0.2)',
+        borderColor: colors.accent,
+        backgroundColor: colors.accentSoft,
         yAxisID: 'y',
         tension: 0.15,
         pointRadius: 0,
@@ -48,15 +50,15 @@ export function TTKMovingAverageChart({ labels, realTTK, ma5, movingAvg }: TTKMo
       {
         label: 'MA(5) Trend',
         data: trend,
-        borderColor: 'rgb(156,163,175)',
-        backgroundColor: 'rgba(156,163,175,0.0)',
+        borderColor: colors.neutral,
+        backgroundColor: colors.neutralSoft,
         yAxisID: 'y',
         tension: 0,
         pointRadius: 0,
         borderDash: [6, 6],
       },
     ],
-  }), [labels, realTTK, ma5, trend])
+  }), [labels, realTTK, ma5, trend, colors])
 
   const options = useMemo(() => ({
     responsive: true,
@@ -83,32 +85,45 @@ export function TTKMovingAverageChart({ labels, realTTK, ma5, movingAvg }: TTKMo
       },
     },
     scales: {
-      x: { ticks: { color: colors.textSecondary }, grid: { color: colors.grid } },
-      y: { ticks: { color: colors.textSecondary, callback: (v: any) => formatSeconds(v, CHART_DECIMALS.ttkTick) }, grid: { color: colors.grid }, suggestedMin: 0 },
+      x: {
+        ticks: { color: colors.textSecondary },
+        grid: { color: colors.grid },
+        title: { display: isExpanded, text: 'Kills (Sequence)', color: colors.textSecondary }
+      },
+      y: {
+        ticks: { color: colors.textSecondary, callback: (v: any) => formatSeconds(v, CHART_DECIMALS.ttkTick) },
+        grid: { color: colors.grid },
+        suggestedMin: 0,
+        title: { display: isExpanded, text: 'Time To Kill (s)', color: colors.textSecondary }
+      },
     },
-  }), [colors])
+  }), [colors, isExpanded])
+
+  const infoContent = (
+    <div className="text-sm">
+      <div className="mb-2">Shows raw TTK per kill, a trailing 5-sample moving average (MA(5)), and a dotted linear trend line of the moving average.</div>
+      <div className="mb-2 font-medium">How to interpret</div>
+      <ul className="list-disc pl-5 text-secondary">
+        <li>MA(5) smooths short-term noise; use it to track persistent changes rather than per-kill variability.</li>
+        <li>A downward slope in the trend signifies faster average TTK over time (improvement).</li>
+        <li>Stable segments (low rolling std) indicate periods of consistent play - use them as baselines.</li>
+        <li>Short spikes in raw TTK often reflect pauses or outliers; rely on MA(5) and trend for long-term signals.</li>
+      </ul>
+    </div>
+  )
 
   return (
-    <div>
-      <ChartBox
-        title="TTK with Moving Average (5) & Trend"
-        info={<div className="text-sm">
-          <div className="mb-2">Shows raw TTK per kill, a trailing 5-sample moving average (MA(5)), and a dotted linear trend line of the moving average.</div>
-          <div className="mb-2 font-medium">How to interpret</div>
-          <ul className="list-disc pl-5 text-[var(--text-secondary)]">
-            <li>MA(5) smooths short-term noise; use it to track persistent changes rather than per-kill variability.</li>
-            <li>A downward slope in the trend signifies faster average TTK over time (improvement).</li>
-            <li>Stable segments (low rolling std) indicate periods of consistent play - use them as baselines.</li>
-            <li>Short spikes in raw TTK often reflect pauses or outliers; rely on MA(5) and trend for long-term signals.</li>
-          </ul>
-        </div>}
-        height={320}
-      >
-        <div className="h-full">
-          <Line data={data as any} options={options as any} />
-        </div>
-      </ChartBox>
-      <TTKMovingAverageDetails movingAvg={movingAvg} />
-    </div>
+    <ChartBox
+      title="TTK with Moving Average (5) & Trend"
+      expandable={true}
+      isExpanded={isExpanded}
+      onExpandChange={setIsExpanded}
+      info={infoContent}
+      height={320}
+    >
+      <div className="h-full">
+        <Line data={data as any} options={options as any} />
+      </div>
+    </ChartBox>
   )
 }

@@ -1,10 +1,14 @@
-import { useEffect, useMemo } from 'react'
-import { ChartBox, MetricsControls, MetricsLineChart, NextHighscoreForecast, PerformanceVsSensChart, SessionLengthInsights, SummaryStats, TimeOfDayAreaChart } from '../../../components'
-import { usePageState } from '../../../hooks/usePageState'
-import { useStore } from '../../../hooks/useStore'
-import { predictNextHighscore } from '../../../lib/analysis'
-import { buildChartSeries, computeSessionAverages, groupByScenario } from '../../../lib/analysis/metrics'
-import { getScenarioName } from '../../../lib/utils'
+import { useEffect, useMemo } from 'react';
+import { MetricsControls } from '../../../components/sessions/MetricsControls';
+import { PerformanceVsSensChart } from '../../../components/sessions/PerformanceVsSensChart';
+import { SessionLengthRecommendation } from '../../../components/sessions/SessionLengthRecommendation';
+import { SessionMetricsChart } from '../../../components/sessions/SessionMetricsChart';
+import { SummaryStats } from '../../../components/sessions/SummaryStats';
+import { TimeOfDayAreaChart } from '../../../components/sessions/TimeOfDayAreaChart';
+import { usePageState } from '../../../hooks/usePageState';
+import { useStore } from '../../../hooks/useStore';
+import { computeSessionAverages, groupByScenario } from '../../../lib/analysis/metrics';
+import { getScenarioName } from '../../../lib/utils';
 
 export function ProgressAllTab() {
   // All scenarios across all sessions (newest first in store)
@@ -18,9 +22,6 @@ export function ProgressAllTab() {
   const [selectedName, setSelectedName] = usePageState<string>('progressAll:selectedName', names[0] ?? '')
   const [autoSelectLast, setAutoSelectLast] = usePageState<boolean>('progressAll:autoSelectLast', true)
   const [mode, setMode] = usePageState<'scenarios' | 'sessions'>('progressAll:mode', 'scenarios')
-  // Windowed comparison percentages for trend deltas
-  const [firstPct, setFirstPct] = usePageState<number>('progressAll:firstPct', 30)
-  const [lastPct, setLastPct] = usePageState<number>('progressAll:lastPct', 30)
 
   // Follow last played scenario name globally when auto-select is enabled
   useEffect(() => {
@@ -41,26 +42,20 @@ export function ProgressAllTab() {
   const metricsSessions = useMemo(() => computeSessionAverages(sessions, selectedName), [sessions, selectedName])
 
   const metrics = mode === 'sessions' ? metricsSessions : metricsRuns
-  // Labels oldest -> newest, data reversed to match labels
-  const { labels, score: scoreSeries, acc: accSeries, ttk: ttkSeries } = buildChartSeries(metrics)
-  const [historyLimit, setHistoryLimit] = usePageState<string>('progressAll:historyLimit', 'all')
 
-  const limitedSeries = useMemo(() => {
-    if (!labels || historyLimit === 'all') return { labels, scoreSeries, accSeries, ttkSeries }
-    const n = parseInt(historyLimit || '0', 10)
-    if (!isFinite(n) || n <= 0) return { labels, scoreSeries, accSeries, ttkSeries }
-    const start = Math.max(0, labels.length - n)
-    return {
-      labels: labels.slice(start),
-      scoreSeries: scoreSeries.slice(start),
-      accSeries: accSeries.slice(start),
-      ttkSeries: ttkSeries.slice(start),
-    }
-  }, [labels, scoreSeries, accSeries, ttkSeries, historyLimit])
+  const infoContent = (
+    <div>
+      <div className="mb-2">Metrics for the selected scenario across all your recorded runs. In Sessions view, values are averaged per session. Latest point is the most recent.</div>
+      <ul className="list-disc pl-5 text-secondary">
+        <li>Score uses the left axis.</li>
+        <li>Accuracy (%) and Real Avg TTK (s) use their own right axes.</li>
+      </ul>
+    </div>
+  )
 
   return (
     <div className="space-y-3">
-      <div className="text-xs text-[var(--text-secondary)]">
+      <div className="text-xs text-secondary">
         This tab shows your overall progress across all recorded runs. It’s the same for every session and updates live as you play.
       </div>
 
@@ -74,59 +69,32 @@ export function ProgressAllTab() {
         onModeChange={setMode}
       />
 
-      <ChartBox
+      <SessionMetricsChart
+        metrics={metrics}
         title="Score, Accuracy and Real Avg TTK (all-time)"
-        controls={{
-          dropdown: {
-            label: 'Points',
-            value: historyLimit,
-            onChange: (v: string) => setHistoryLimit(v),
-            options: [
-              { label: 'All', value: 'all' },
-              { label: '5', value: '5' },
-              { label: '10', value: '10' },
-              { label: '20', value: '20' },
-              { label: '50', value: '50' },
-            ],
-          },
-        }}
-        info={<div>
-          <div className="mb-2">Metrics for the selected scenario across all your recorded runs. In Sessions view, values are averaged per session. Latest point is the most recent.</div>
-          <ul className="list-disc pl-5 text-[var(--text-secondary)]">
-            <li>Score uses the left axis.</li>
-            <li>Accuracy (%) and Real Avg TTK (s) use their own right axes.</li>
-          </ul>
-        </div>}
-      >
-        <MetricsLineChart labels={limitedSeries.labels} score={limitedSeries.scoreSeries} acc={limitedSeries.accSeries} ttk={limitedSeries.ttkSeries} />
-      </ChartBox>
+        info={infoContent}
+        storageKeyPrefix="progressAll"
+        modalControls={
+          <MetricsControls
+            names={names}
+            selectedName={selectedName}
+            onSelect={(v) => { setSelectedName(v); setAutoSelectLast(false) }}
+            autoSelectLast={autoSelectLast}
+            onToggleAuto={setAutoSelectLast}
+            mode={mode}
+            onModeChange={setMode}
+          />
+        }
+      />
 
-      <SummaryStats title="Progress summary" score={metrics.score} acc={metrics.acc} ttk={metrics.ttk} firstPct={firstPct} lastPct={lastPct} onFirstPct={setFirstPct} onLastPct={setLastPct} />
-
-      <NextHighscoreForecast pred={useMemo(() => predictNextHighscore(scenarios, selectedName), [scenarios, selectedName])} />
-
-      <SessionLengthInsights sessions={sessions} scenarioName={selectedName} />
+      <SummaryStats title="Progress summary" score={metrics.score} acc={metrics.acc} ttk={metrics.ttk} storageKeyPrefix="progressAll" />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <PerformanceVsSensChart items={scenarios} scenarioName={selectedName} />
-        <ChartBox
-          title="Practice time-of-day"
-          info={<div>
-            <div className="mb-2">Distribution of your practice runs by hour of day (local clock). Peaks indicate when you most frequently practice.</div>
-            <div className="mb-2 font-medium">How to interpret</div>
-            <ul className="list-disc pl-5 text-[var(--text-secondary)]">
-              <li>Peaks show the hours when you run the most training sessions - great for identifying consistent practice windows.</li>
-              <li>Use this to align deliberate practice into your existing schedule or to compare performance on other charts with time-of-day buckets.</li>
-              <li>This chart shows frequency only. For performance-by-hour analysis, cross-reference with accuracy/TTK charts sliced by time-of-day.</li>
-            </ul>
-          </div>}
-          height={300}
-        >
-          <div className="h-full">
-            <TimeOfDayAreaChart items={scenarios} />
-          </div>
-        </ChartBox>
+        <TimeOfDayAreaChart items={scenarios} />
       </div>
+
+      <SessionLengthRecommendation sessions={sessions} />
     </div>
   )
 }

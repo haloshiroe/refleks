@@ -1,10 +1,12 @@
-import { useMemo } from 'react'
-import { Doughnut } from 'react-chartjs-2'
-import { useChartTheme } from '../../hooks/useChartTheme'
-import { usePageState } from '../../hooks/usePageState'
-import { CHART_DECIMALS, formatNumber } from '../../lib/utils'
-import type { Benchmark, BenchmarkProgress } from '../../types/ipc'
-import { ChartBox } from '../shared/ChartBox'
+import { useMemo } from 'react';
+import { Doughnut } from 'react-chartjs-2';
+import { useChartTheme } from '../../hooks/useChartTheme';
+import { usePageState } from '../../hooks/usePageState';
+import { CHART_DECIMALS } from '../../lib/constants';
+import { formatNumber } from '../../lib/utils';
+import type { Benchmark, BenchmarkProgress } from '../../types/ipc';
+import { ChartBox } from '../shared/ChartBox';
+import { Dropdown } from '../shared/Dropdown';
 
 type RankDistributionDonutProps = {
   bench: Benchmark
@@ -18,10 +20,9 @@ export function RankDistributionDonut({ bench, progress, difficultyIndex, height
   const theme = useChartTheme()
 
   type ScopeLevel = 'all' | 'category' | 'subcategory'
-  const benchKey = `${bench.abbreviation}-${bench.benchmarkName}`
-  const [level, setLevel] = usePageState<ScopeLevel>(`bench:${benchKey}:diff:${difficultyIndex}:ranks:level`, 'all')
-  const [catIdx, setCatIdx] = usePageState<number>(`bench:${benchKey}:diff:${difficultyIndex}:ranks:catIdx`, 0)
-  const [subIdx, setSubIdx] = usePageState<number>(`bench:${benchKey}:diff:${difficultyIndex}:ranks:subIdx`, 0)
+  const [level, setLevel] = usePageState<ScopeLevel>('bench:ranks:level', 'all')
+  const [catIdx, setCatIdx] = usePageState<number>('bench:ranks:catIdx', 0)
+  const [subIdx, setSubIdx] = usePageState<number>('bench:ranks:subIdx', 0)
 
   const categories = progress?.categories || []
 
@@ -55,9 +56,9 @@ export function RankDistributionDonut({ bench, progress, difficultyIndex, height
 
   const bgColors = useMemo(() => {
     const cols = rankDefs.map(r => r.color)
-    const below = '#94a3b8' // slate-400
+    const below = theme.neutral
     return counts.below > 0 ? [below, ...cols] : cols
-  }, [rankDefs, counts.below])
+  }, [rankDefs, counts.below, theme.neutral])
 
   const data = useMemo(() => ({
     labels,
@@ -100,28 +101,34 @@ export function RankDistributionDonut({ bench, progress, difficultyIndex, height
     return (c?.groups || []).map((g, i) => ({ label: g.name || `Group ${i + 1}`, value: String(i) }))
   })()
 
+  const infoContent = (
+    <div>
+      <div className="mb-2">Distribution of achieved ranks across the selected scope.</div>
+      <ul className="list-disc pl-5 text-secondary">
+        <li>Colors match rank colors for the opened difficulty.</li>
+        <li>“Below R1” indicates scenarios not yet at the first rank.</li>
+      </ul>
+    </div>
+  )
+
   return (
     <ChartBox
       title="Rank distribution"
-      info={<div>
-        <div className="mb-2">Distribution of achieved ranks across the selected scope.</div>
-        <ul className="list-disc pl-5 text-[var(--text-secondary)]">
-          <li>Colors match rank colors for the opened difficulty.</li>
-          <li>“Below R1” indicates scenarios not yet at the first rank.</li>
-        </ul>
-      </div>}
-      controls={{
-        dropdown: {
-          label: 'Scope',
-          value: level,
-          onChange: (v: string) => setLevel((v as ScopeLevel) || 'all'),
-          options: [
+      expandable={true}
+      info={infoContent}
+      actions={
+        <Dropdown
+          size="sm"
+          label="Scope"
+          value={level}
+          onChange={(v) => setLevel((v as ScopeLevel) || 'all')}
+          options={[
             { label: 'All scenarios', value: 'all' },
             { label: 'Category', value: 'category' },
             { label: 'Subcategory', value: 'subcategory' },
-          ]
-        }
-      }}
+          ]}
+        />
+      }
       height={height}
     >
       <div className="h-full flex flex-col">
@@ -130,7 +137,7 @@ export function RankDistributionDonut({ bench, progress, difficultyIndex, height
           {level !== 'all' && (
             <>
               <select
-                className="px-2 py-1 rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)]"
+                className="px-2 py-1 rounded bg-surface-3 border border-primary"
                 value={String(catIdx)}
                 onChange={e => setCatIdx(Number(e.target.value))}
               >
@@ -138,7 +145,7 @@ export function RankDistributionDonut({ bench, progress, difficultyIndex, height
               </select>
               {level === 'subcategory' && (
                 <select
-                  className="px-2 py-1 rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)]"
+                  className="px-2 py-1 rounded bg-surface-3 border border-primary"
                   value={String(subIdx)}
                   onChange={e => setSubIdx(Number(e.target.value))}
                 >
@@ -150,7 +157,7 @@ export function RankDistributionDonut({ bench, progress, difficultyIndex, height
         </div>
         <div className="flex-1 min-h-0">
           {labels.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-sm text-[var(--text-secondary)]">No data.</div>
+            <div className="h-full flex items-center justify-center text-sm text-secondary">No data.</div>
           ) : (
             <div className="h-full pb-4">
               <Doughnut data={data as any} options={options as any} />

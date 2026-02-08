@@ -1,8 +1,6 @@
 package settings
 
 import (
-	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,9 +31,11 @@ func Default() models.Settings {
 		TracesDir:            DefaultTracesDirString(),
 		SessionGapMinutes:    constants.DefaultSessionGapMinutes,
 		Theme:                constants.DefaultTheme,
+		Font:                 constants.DefaultFont,
 		MouseTrackingEnabled: false,
 		MouseBufferMinutes:   constants.DefaultMouseBufferMinutes,
 		MaxExistingOnStart:   constants.DefaultMaxExistingOnStart,
+		AutostartEnabled:     false,
 	}
 }
 
@@ -56,22 +56,40 @@ func Sanitize(s models.Settings) models.Settings {
 	if strings.TrimSpace(s.Theme) == "" {
 		s.Theme = constants.DefaultTheme
 	}
+	if strings.TrimSpace(s.Font) == "" {
+		s.Font = constants.DefaultFont
+	}
 	if s.MouseBufferMinutes <= 0 {
 		s.MouseBufferMinutes = constants.DefaultMouseBufferMinutes
 	}
 	if s.MaxExistingOnStart <= 0 {
 		s.MaxExistingOnStart = constants.DefaultMaxExistingOnStart
 	}
+	if s.ScenarioNotes == nil {
+		s.ScenarioNotes = make(map[string]models.ScenarioNote)
+	}
+	if s.SessionNotes == nil {
+		s.SessionNotes = make(map[string]models.SessionNote)
+	}
 	return s
 }
 
-// ConfigBaseDir returns the application config directory under the user's home dir: $HOME/.refleks
-func ConfigBaseDir() (string, error) {
+// GetConfigDir returns the application config directory under the user's home dir: $HOME/.refleks
+// It does not ensure the directory exists.
+func GetConfigDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	base := filepath.Join(home, constants.ConfigDirName)
+	return filepath.Join(home, constants.ConfigDirName), nil
+}
+
+// EnsureConfigDir returns the application config directory, creating it if necessary.
+func EnsureConfigDir() (string, error) {
+	base, err := GetConfigDir()
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		return "", err
 	}
@@ -80,7 +98,7 @@ func ConfigBaseDir() (string, error) {
 
 // DefaultTracesDirString returns the default traces directory as a concrete path string.
 func DefaultTracesDirString() string {
-	base, err := ConfigBaseDir()
+	base, err := GetConfigDir()
 	if err != nil {
 		// Fallback to relative subdir if home/config cannot be determined
 		return filepath.ToSlash(constants.TracesSubdirName)
@@ -90,7 +108,7 @@ func DefaultTracesDirString() string {
 
 // DefaultTracesDir returns the resolved default traces directory ($HOME/.refleks/traces).
 func DefaultTracesDir() (string, error) {
-	base, err := ConfigBaseDir()
+	base, err := GetConfigDir()
 	if err != nil {
 		return "", err
 	}
@@ -108,57 +126,9 @@ func ExpandPathPlaceholders(p string) string {
 
 // Path returns the settings file path under the user home config directory ($HOME/.refleks).
 func Path() (string, error) {
-	base, err := ConfigBaseDir()
+	base, err := GetConfigDir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(base, "settings.json"), nil
-}
-
-// Load reads settings from disk.
-func Load() (models.Settings, error) {
-	path, err := Path()
-	if err != nil {
-		return models.Settings{}, err
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return models.Settings{}, errors.New("no settings yet")
-		}
-		return models.Settings{}, err
-	}
-	var s models.Settings
-	if err := json.Unmarshal(b, &s); err != nil {
-		return models.Settings{}, err
-	}
-	return s, nil
-}
-
-// Save writes settings to disk.
-func Save(s models.Settings) error {
-	path, err := Path()
-	if err != nil {
-		return err
-	}
-	b, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, b, 0o644)
-}
-
-// GetFavoriteBenchmarks returns a defensive copy of the favorites list from the provided settings.
-func GetFavoriteBenchmarks(s models.Settings) []string {
-	return append([]string(nil), s.FavoriteBenchmarks...)
-}
-
-// SetFavoriteBenchmarks updates the provided settings in-memory and persists them to disk.
-// The provided settings pointer will be mutated. Returns an error if persistence fails.
-func SetFavoriteBenchmarks(s *models.Settings, ids []string) error {
-	if s == nil {
-		return errors.New("nil settings")
-	}
-	s.FavoriteBenchmarks = append([]string(nil), ids...)
-	return Save(*s)
 }

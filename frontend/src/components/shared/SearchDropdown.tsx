@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export type SearchDropdownOption = { label: string; value: string | number }
 
@@ -68,9 +69,11 @@ export function SearchDropdown({
 
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null)
 
   const dropdownRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
 
   const selectedLabel = useMemo(
     () => options.find(opt => String(opt.value) === String(value))?.label ?? '',
@@ -96,12 +99,40 @@ export function SearchDropdown({
   useEffect(() => {
     if (!isOpen) return
     const onDocClick = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+        menuRef.current && !menuRef.current.contains(e.target as Node)
+      ) {
         setIsOpen(false)
       }
     }
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
+  }, [isOpen])
+
+  // Update position
+  useLayoutEffect(() => {
+    if (isOpen && dropdownRef.current) {
+      const updatePosition = () => {
+        const rect = dropdownRef.current?.getBoundingClientRect()
+        if (rect) {
+          setCoords({
+            top: rect.bottom,
+            left: rect.left,
+            width: rect.width
+          })
+        }
+      }
+      updatePosition()
+      window.addEventListener('resize', updatePosition)
+      window.addEventListener('scroll', updatePosition, true)
+      return () => {
+        window.removeEventListener('resize', updatePosition)
+        window.removeEventListener('scroll', updatePosition, true)
+      }
+    } else {
+      setCoords(null)
+    }
   }, [isOpen])
 
   const openAndFocusSearch = () => {
@@ -116,7 +147,7 @@ export function SearchDropdown({
 
   return (
     <div
-      className={`inline-flex items-center gap-2 text-[var(--text-secondary)] ${size === 'md' ? 'text-sm' : 'text-xs'} ${fullWidth ? 'w-full' : ''
+      className={`inline-flex items-center gap-2 text-secondary ${size === 'md' ? 'text-sm' : 'text-xs'} ${fullWidth ? 'w-full' : ''
         }`}
     >
       {label && <span className="select-none">{label}</span>}
@@ -125,7 +156,7 @@ export function SearchDropdown({
           type="button"
           aria-label={ariaLabel || label}
           aria-expanded={isOpen}
-          className={`flex items-center justify-between ${pad} rounded-md bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/60 hover:bg-[var(--bg-tertiary)] w-full ${className}`}
+          className={`flex items-center justify-between ${pad} rounded bg-surface-2 border border-primary text-primary focus:outline-none focus:ring-2 focus:ring-accent/60 hover:bg-surface-3 w-full ${className}`}
           onClick={() => setIsOpen(v => !v)}
           onKeyDown={e => {
             if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
@@ -135,17 +166,24 @@ export function SearchDropdown({
           }}
         >
           <span className="truncate">{selectedLabel || 'Select...'}</span>
-          <ChevronDown className="ml-2 h-4 w-4 text-[var(--text-secondary)]" aria-hidden />
+          <ChevronDown className="ml-2 h-4 w-4 text-secondary" aria-hidden />
         </button>
 
-        {isOpen && (
+        {isOpen && coords && createPortal(
           <div
-            className={`absolute left-0 z-10 mt-1 ${fullWidth ? 'w-full' : 'min-w-[16rem]'} rounded-md bg-[var(--bg-secondary)] border border-[var(--border-primary)] shadow-lg`}
+            ref={menuRef}
+            className={`fixed z-[60] mt-1 rounded bg-surface-2 border border-primary shadow-lg`}
+            style={{
+              top: coords.top,
+              left: coords.left,
+              width: fullWidth ? coords.width : 'auto',
+              minWidth: fullWidth ? undefined : '16rem'
+            }}
           >
             <input
               ref={inputRef}
               type="text"
-              className={`mb-1 w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-secondary)] ${pad} text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/50`}
+              className={`mb-1 w-full rounded border border-primary bg-surface-2 ${pad} text-primary focus:outline-none focus:ring-2 focus:ring-accent/50`}
               placeholder="Search..."
               aria-label={`Search ${label || ''}`}
               value={search}
@@ -153,7 +191,7 @@ export function SearchDropdown({
               onKeyDown={e => {
                 if ((e.key === 'ArrowDown' || e.key === 'Tab') && filteredOptions.length > 0) {
                   e.preventDefault()
-                  const first = dropdownRef.current?.querySelector<HTMLLIElement>('li[role="option"]')
+                  const first = menuRef.current?.querySelector<HTMLLIElement>('li[role="option"]')
                   first?.focus()
                 } else if (e.key === 'Escape') {
                   e.preventDefault()
@@ -164,7 +202,7 @@ export function SearchDropdown({
 
             <ul role="listbox" aria-label={label ?? 'options'} className="max-h-72 overflow-auto text-xs">
               {filteredOptions.length === 0 && (
-                <li className="px-2 py-1 text-[var(--text-secondary)] select-none">No options</li>
+                <li className="px-2 py-1 text-secondary select-none">No options</li>
               )}
 
               {filteredOptions.map(opt => {
@@ -176,8 +214,8 @@ export function SearchDropdown({
                     role="option"
                     aria-selected={isSelected}
                     className={`px-2 py-1 cursor-pointer outline-none ${isSelected
-                      ? 'bg-[var(--accent-primary)] text-white'
-                      : 'text-[var(--text-primary)] hover:bg-[var(--bg-hover)] focus:bg-[var(--bg-hover)]'
+                      ? 'bg-accent text-on-accent'
+                      : 'text-primary hover:bg-hover focus:bg-hover'
                       }`}
                     onClick={() => handleSelect(opt.value)}
                     onKeyDown={e => {
@@ -203,7 +241,8 @@ export function SearchDropdown({
                 )
               })}
             </ul>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     </div>

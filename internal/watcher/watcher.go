@@ -29,17 +29,21 @@ type Watcher struct {
 	stopCh  chan struct{}
 	seen    map[string]struct{} // full file path set
 
-	recent []models.ScenarioRecord
-	mouse  MouseProvider
+	recent    []models.ScenarioRecord
+	mouse     MouseProvider
+	tracesSvc *traces.Service
+
+	OnScenarioParsed func(models.ScenarioRecord)
 }
 
 // New returns a new Watcher with the given config.
-func New(ctx context.Context, cfg models.WatcherConfig) *Watcher {
+func New(ctx context.Context, cfg models.WatcherConfig, tracesSvc *traces.Service) *Watcher {
 	return &Watcher{
-		ctx:    ctx,
-		cfg:    cfg,
-		stopCh: make(chan struct{}),
-		seen:   make(map[string]struct{}),
+		ctx:       ctx,
+		cfg:       cfg,
+		stopCh:    make(chan struct{}),
+		seen:      make(map[string]struct{}),
+		tracesSvc: tracesSvc,
 	}
 }
 
@@ -75,7 +79,7 @@ func (w *Watcher) Start() error {
 		}
 	}
 
-	runtime.EventsEmit(w.ctx, "WatcherStarted", map[string]string{"path": w.cfg.Path})
+	runtime.EventsEmit(w.ctx, constants.EventWatcherStarted, map[string]string{"path": w.cfg.Path})
 
 	// Optionally parse existing files once
 	if w.cfg.ParseExistingOnStart {
@@ -97,6 +101,13 @@ func (w *Watcher) Stop() error {
 	w.running = false
 	w.stopCh = make(chan struct{})
 	return nil
+}
+
+// SetOnScenarioParsed sets the callback for when a scenario is parsed.
+func (w *Watcher) SetOnScenarioParsed(fn func(models.ScenarioRecord)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.OnScenarioParsed = fn
 }
 
 func (w *Watcher) Clear() {
@@ -140,6 +151,18 @@ func (w *Watcher) scanOnce(includeAll bool) error {
 			continue
 		}
 		full := filepath.Join(w.cfg.Path, name)
+
+		// Optimization: If we're not forcing a re-scan, skip files we've already processed.
+		// This avoids expensive regex parsing on thousands of files every poll interval.
+		if !includeAll {
+			w.mu.RLock()
+			_, known := w.seen[full]
+			w.mu.RUnlock()
+			if known {
+				continue
+			}
+		}
+
 		info, err := parser.ParseFilename(name)
 		if err != nil {
 			continue
@@ -184,8 +207,12 @@ func (w *Watcher) scanOnce(includeAll bool) error {
 		}
 		w.mu.Unlock()
 
+		if w.OnScenarioParsed != nil {
+			w.OnScenarioParsed(rec)
+		}
+
 		// Emit a flat ScenarioRecord to simplify the IPC contract.
-		runtime.EventsEmit(w.ctx, "ScenarioAdded", rec)
+		runtime.EventsEmit(w.ctx, constants.EventScenarioAdded, rec)
 	}
 	return nil
 }
@@ -248,6 +275,13 @@ func (w *Watcher) parseFile(fullPath string) (models.ScenarioRecord, error) {
 		stats["cm/360"] = cm
 	}
 
+	// Calculate duration
+	start, end := deriveScenarioWindow(info.DatePlayed, stats, events)
+	if !start.IsZero() && !end.IsZero() {
+		duration := end.Sub(start).Seconds()
+		stats["Duration"] = duration
+	}
+
 	rec := models.ScenarioRecord{
 		FilePath: fullPath,
 		FileName: filepath.Base(fullPath),
@@ -271,8 +305,8 @@ func (w *Watcher) parseFile(fullPath string) (models.ScenarioRecord, error) {
 	// If we captured a trace, persist it to disk for future reloads.
 	if len(rec.MouseTrace) > 0 {
 		// Only write if not already present to avoid churn.
-		if !traces.Exists(rec.FileName) {
-			_ = traces.Save(traces.ScenarioData{
+		if !w.tracesSvc.Exists(rec.FileName) {
+			_ = w.tracesSvc.Save(traces.ScenarioData{
 				Version:      1,
 				FileName:     rec.FileName,
 				ScenarioName: info.ScenarioName,
@@ -280,12 +314,14 @@ func (w *Watcher) parseFile(fullPath string) (models.ScenarioRecord, error) {
 				MouseTrace:   rec.MouseTrace,
 			})
 		}
+		// We have a trace, but we don't send it immediately to save bandwidth/memory.
+		// The frontend will request it if needed.
+		rec.HasTrace = true
+		rec.MouseTrace = nil
 	} else {
-		// No live capture available (e.g., after restart). Attempt to load persisted data.
-		if traces.Exists(rec.FileName) {
-			if sd, err := traces.Load(rec.FileName); err == nil && len(sd.MouseTrace) > 0 {
-				rec.MouseTrace = sd.MouseTrace
-			}
+		// No live capture available (e.g., after restart). Check if persisted data exists.
+		if w.tracesSvc.Exists(rec.FileName) {
+			rec.HasTrace = true
 		}
 	}
 	return rec, nil
@@ -378,32 +414,25 @@ func (w *Watcher) UpdateConfig(cfg models.WatcherConfig) error {
 	return nil
 }
 
-// ReloadTraces attempts to reload persisted mouse traces for recent scenarios
-// from the traces storage directory. For any records that gain a non-empty
-// MouseTrace as a result, a 'ScenarioUpdated' event is emitted.
+// ReloadTraces checks for persisted mouse traces for recent scenarios.
+// If a record didn't have a trace but now does, a 'ScenarioUpdated' event is emitted.
 func (w *Watcher) ReloadTraces() int {
 	// Copy updated records to emit outside the lock
 	var toEmit []models.ScenarioRecord
 	w.mu.Lock()
 	for i := range w.recent {
 		rec := w.recent[i]
-		// Attempt to load persisted trace
-		if traces.Exists(rec.FileName) {
-			if sd, err := traces.Load(rec.FileName); err == nil {
-				if len(sd.MouseTrace) > 0 {
-					if !equalMouseTrace(rec.MouseTrace, sd.MouseTrace) {
-						rec.MouseTrace = sd.MouseTrace
-						w.recent[i] = rec
-						toEmit = append(toEmit, rec)
-					}
-				}
-			}
+		// Check if trace exists on disk
+		if !rec.HasTrace && w.tracesSvc.Exists(rec.FileName) {
+			rec.HasTrace = true
+			w.recent[i] = rec
+			toEmit = append(toEmit, rec)
 		}
 	}
 	w.mu.Unlock()
 
 	for _, rec := range toEmit {
-		runtime.EventsEmit(w.ctx, "ScenarioUpdated", rec)
+		runtime.EventsEmit(w.ctx, constants.EventScenarioUpdated, rec)
 	}
 	return len(toEmit)
 }
@@ -412,19 +441,6 @@ func (w *Watcher) ReloadTraces() int {
 func isKovaaksStatsFile(name string) bool {
 	lower := strings.ToLower(name)
 	return strings.HasSuffix(lower, " stats.csv")
-}
-
-// equalMouseTrace provides a fast equality check for two mouse traces.
-func equalMouseTrace(a, b []models.MousePoint) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if !a[i].TS.Equal(b[i].TS) || a[i].X != b[i].X || a[i].Y != b[i].Y || a[i].Buttons != b[i].Buttons {
-			return false
-		}
-	}
-	return true
 }
 
 // effectiveRecentCap returns the in-memory cap for recent scenarios.

@@ -1,39 +1,20 @@
-/*
-  RefleK's Theme System
-  ---------------------
-  Edit this file to customize colors, like you would in VS Code.
+/* Global font defaults */
+:root {
+  /* Font Stacks */
+  --font-stack-montserrat: "Montserrat", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-stack-inter: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-stack-jetbrains-mono: "JetBrains Mono", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, monospace;
 
-  Usage:
-  - The app root sets a class on <html>: `theme-dark` or `theme-light`.
-  - Components use CSS variables (below) via Tailwind arbitrary values, e.g.:
-      bg-[var(--bg-primary)] text-[var(--text-primary)] border-[var(--border-primary)]
-      hover:bg-[var(--bg-tertiary)]
-  - You can add more variables or additional theme classes (e.g. theme-ocean).
-
-  Variables (keep names stable for theme compatibility):
-  --bg-primary       : main application background
-  --bg-secondary     : panel/background for surfaces
-  --bg-tertiary      : subtle elevated surface / hovers
-  --bg-card          : solid card background
-  --bg-hover         : generic hover background
-  --border-primary   : primary borders / separators
-  --border-secondary : secondary borders
-  --text-primary     : primary text color
-  --text-secondary   : secondary text color
-  --text-muted       : muted/tertiary text
-  --accent-primary   : brand/accent color
-  --accent-hover     : hover color for accent
-  --accent-light     : lighter tint of accent
-  --success          : success state color
-  --warning          : warning state color
-  --error            : error state color
-  --gradient-bg      : app background gradient
-  --gradient-card    : card gradient
-  --gradient-accent  : accent gradient
-
-  Scrollbars use the same tokens via dedicated variables:
-  --scrollbar-track, --scrollbar-thumb, --scrollbar-thumb-hover, --scrollbar-thumb-active, --scrollbar-accent
-*/
+  --font-body: var(--font-stack-montserrat);
+  --font-mono: var(--font-stack-jetbrains-mono);
+  /* Default range control sizes and colors. These can be overriden by components */
+  --range-track-height: 10px;
+  --range-thumb-width: 28px;
+  --range-thumb-height: 14px;
+  --range-thumb-border: 2px;
+  --range-track-bg: var(--bg-tertiary);
+  --range-thumb-bg: var(--text-primary);
+}
 
 /* Dark theme */
 .theme-dark {
@@ -51,11 +32,12 @@
   --accent-light: #60a5fa;
   --border-primary: #333333;
   --border-secondary: #404040;
-  --shadow-primary: #111316a9;
-  --shadow-secondary: #18191ca9;
+  --shadow-primary: #11131630;
+  --shadow-secondary: #18191c30;
   --success: #10b981;
   --warning: #f59e0b;
   --error: #ef4444;
+  --streak: #f97316;
   --gradient-bg: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0f0f0f 100%);
   --gradient-card: linear-gradient(135deg, #1f1f1f 0%, #2a2a2a 100%);
   --gradient-accent: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
@@ -71,6 +53,23 @@
   --preview-bg: rgba(234, 179, 8, 0.18);
   --preview-text: #facc15;
   --preview-border: rgba(234, 179, 8, 0.35);
+
+  /* Form + overlays */
+  --text-on-accent: #0b1220;
+  --focus-ring: #60a5fa;
+  --overlay: rgba(0, 0, 0, 0.55);
+  --input-bg: var(--bg-tertiary);
+  --input-border: var(--border-primary);
+  --muted-bg: var(--bg-tertiary);
+  --muted-border: var(--border-secondary);
+
+  /* Charts */
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-tooltip-bg: rgba(17, 19, 22, 0.92);
+  --chart-tooltip-border: rgba(255, 255, 255, 0.08);
+  --chart-neutral: #94a3b8;
+  --chart-neutral-strong: #cbd5e1;
+  --chart-contrast: #ffffff;
 }
 
 /* Light theme */
@@ -88,11 +87,12 @@
   --accent-light: #38bdf8;
   --border-primary: #dcdfe4;
   --border-secondary: #c9cfd7;
-  --shadow-primary: #f6f7f9a9;
-  --shadow-secondary: #ffffffa9;
+  --shadow-primary: #f6f7f930;
+  --shadow-secondary: #ffffff30;
   --success: #10b981;
   --warning: #f59e0b;
   --error: #ef4444;
+  --streak: #f97316;
   --gradient-bg: linear-gradient(135deg, #ffffff 0%, #f6f7f9 50%, #ebeff5 100%);
   --gradient-card: linear-gradient(135deg, #ffffff 0%, #f5f7fb 100%);
   --gradient-accent: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
@@ -108,6 +108,23 @@
   --preview-bg: rgba(245, 158, 11, 0.12);
   --preview-text: #a16207;
   --preview-border: rgba(245, 158, 11, 0.35);
+
+  /* Form + overlays */
+  --text-on-accent: #0b1220;
+  --focus-ring: #0ea5e9;
+  --overlay: rgba(0, 0, 0, 0.45);
+  --input-bg: var(--bg-tertiary);
+  --input-border: var(--border-primary);
+  --muted-bg: #eef2f6;
+  --muted-border: var(--border-primary);
+
+  /* Charts */
+  --chart-grid: rgba(0, 0, 0, 0.08);
+  --chart-tooltip-bg: rgba(255, 255, 255, 0.98);
+  --chart-tooltip-border: rgba(15, 23, 42, 0.08);
+  --chart-neutral: #64748b;
+  --chart-neutral-strong: #475569;
+  --chart-contrast: #0f172a;
 }
 
 /* Dracula theme */
@@ -125,11 +142,12 @@
   --accent-light: #d8b6ff;
   --border-primary: #44475a;
   --border-secondary: #5b5e72;
-  --shadow-primary: #282a36a9;
-  --shadow-secondary: #2b2d3aa9;
+  --shadow-primary: #282a3630;
+  --shadow-secondary: #2b2d3a30;
   --success: #10b981;
   --warning: #f59e0b;
   --error: #ef4444;
+  --streak: #ffb86c;
   --gradient-bg: linear-gradient(135deg, #1f2030 0%, #2b2d3a 50%, #242638 100%);
   --gradient-card: linear-gradient(135deg, #2b2d3a 0%, #343746 100%);
   --gradient-accent: linear-gradient(135deg, #bd93f9 0%, #8a63d2 100%);
@@ -145,6 +163,23 @@
   --preview-bg: rgba(234, 179, 8, 0.18);
   --preview-text: #facc15;
   --preview-border: rgba(234, 179, 8, 0.35);
+
+  /* Form + overlays */
+  --text-on-accent: #0b1220;
+  --focus-ring: var(--accent-primary);
+  --overlay: rgba(0, 0, 0, 0.55);
+  --input-bg: var(--bg-tertiary);
+  --input-border: var(--border-primary);
+  --muted-bg: var(--bg-tertiary);
+  --muted-border: var(--border-secondary);
+
+  /* Charts */
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-tooltip-bg: rgba(34, 36, 46, 0.92);
+  --chart-tooltip-border: rgba(255, 255, 255, 0.1);
+  --chart-neutral: #a6accd;
+  --chart-neutral-strong: #d1d5ec;
+  --chart-contrast: #ffffff;
 }
 
 /* Gruvbox (dark) theme */
@@ -162,11 +197,12 @@
   --accent-light: #ffd75f;
   --border-primary: #504945;
   --border-secondary: #665c54;
-  --shadow-primary: #282828a9;
-  --shadow-secondary: #3c3836a9;
+  --shadow-primary: #28282830;
+  --shadow-secondary: #3c383630;
   --success: #b8bb26;
   --warning: #fabd2f;
   --error: #fb4934;
+  --streak: #fe8019;
   --gradient-bg: linear-gradient(135deg, #282828 0%, #3c3836 50%, #282828 100%);
   --gradient-card: linear-gradient(135deg, #3c3836 0%, #504945 100%);
   --gradient-accent: linear-gradient(135deg, #fabd2f 0%, #d79921 100%);
@@ -182,6 +218,23 @@
   --preview-bg: rgba(234, 179, 8, 0.18);
   --preview-text: #facc15;
   --preview-border: rgba(234, 179, 8, 0.35);
+
+  /* Form + overlays */
+  --text-on-accent: #0b1220;
+  --focus-ring: var(--accent-primary);
+  --overlay: rgba(0, 0, 0, 0.55);
+  --input-bg: var(--bg-tertiary);
+  --input-border: var(--border-primary);
+  --muted-bg: var(--bg-tertiary);
+  --muted-border: var(--border-secondary);
+
+  /* Charts */
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-tooltip-bg: rgba(40, 40, 40, 0.9);
+  --chart-tooltip-border: rgba(255, 255, 255, 0.08);
+  --chart-neutral: #d5c4a1;
+  --chart-neutral-strong: #ebdbb2;
+  --chart-contrast: #ffffff;
 }
 
 /* Gruvbox (light) theme */
@@ -199,11 +252,12 @@
   --accent-light: #ffd75f;
   --border-primary: #a89984;
   --border-secondary: #bdae93;
-  --shadow-primary: #fbf1c7a9;
-  --shadow-secondary: #ebdbb2a9;
+  --shadow-primary: #fbf1c730;
+  --shadow-secondary: #ebdbb230;
   --success: #b8bb26;
   --warning: #fabd2f;
   --error: #fb4934;
+  --streak: #d65d0e;
   --gradient-bg: linear-gradient(135deg, #fbf1c7 0%, #ebdbb2 50%, #f0e4c8 100%);
   --gradient-card: linear-gradient(135deg, #ebdbb2 0%, #d5c4a1 100%);
   --gradient-accent: linear-gradient(135deg, #fabd2f 0%, #d79921 100%);
@@ -219,6 +273,23 @@
   --preview-bg: rgba(245, 158, 11, 0.12);
   --preview-text: #a16207;
   --preview-border: rgba(245, 158, 11, 0.35);
+
+  /* Form + overlays */
+  --text-on-accent: #0b1220;
+  --focus-ring: var(--accent-primary);
+  --overlay: rgba(0, 0, 0, 0.45);
+  --input-bg: var(--bg-tertiary);
+  --input-border: var(--border-primary);
+  --muted-bg: #f2e6c8;
+  --muted-border: var(--border-primary);
+
+  /* Charts */
+  --chart-grid: rgba(0, 0, 0, 0.08);
+  --chart-tooltip-bg: rgba(255, 255, 255, 0.98);
+  --chart-tooltip-border: rgba(0, 0, 0, 0.08);
+  --chart-neutral: #6b5c4b;
+  --chart-neutral-strong: #4a3f33;
+  --chart-contrast: #0f172a;
 }
 
 /* Nord (dark) theme */
@@ -236,11 +307,12 @@
   --accent-light: #a3cee0;
   --border-primary: #4c566a;
   --border-secondary: #5e6a7d;
-  --shadow-primary: #2e3440a9;
-  --shadow-secondary: #3b4252a9;
+  --shadow-primary: #2e344030;
+  --shadow-secondary: #3b425230;
   --success: #a3be8c;
   --warning: #ebcb8b;
   --error: #bf616a;
+  --streak: #d08770;
   --gradient-bg: linear-gradient(135deg, #2e3440 0%, #3b4252 50%, #2e3440 100%);
   --gradient-card: linear-gradient(135deg, #3b4252 0%, #434c5e 100%);
   --gradient-accent: linear-gradient(135deg, #88c0d0 0%, #5e81ac 100%);
@@ -256,6 +328,23 @@
   --preview-bg: rgba(234, 179, 8, 0.18);
   --preview-text: #facc15;
   --preview-border: rgba(234, 179, 8, 0.35);
+
+  /* Form + overlays */
+  --text-on-accent: #0b1220;
+  --focus-ring: var(--accent-primary);
+  --overlay: rgba(0, 0, 0, 0.55);
+  --input-bg: var(--bg-tertiary);
+  --input-border: var(--border-primary);
+  --muted-bg: var(--bg-tertiary);
+  --muted-border: var(--border-secondary);
+
+  /* Charts */
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-tooltip-bg: rgba(46, 52, 64, 0.9);
+  --chart-tooltip-border: rgba(255, 255, 255, 0.08);
+  --chart-neutral: #d8dee9;
+  --chart-neutral-strong: #e5e9f0;
+  --chart-contrast: #ffffff;
 }
 
 /* Ocean (light) theme */
@@ -273,11 +362,12 @@
   --accent-light: #22d3ee;
   --border-primary: #d6e1ef;
   --border-secondary: #c5d5e7;
-  --shadow-primary: #eaf2fba9;
-  --shadow-secondary: #ffffffa9;
+  --shadow-primary: #eaf2fb30;
+  --shadow-secondary: #ffffff30;
   --success: #10b981;
   --warning: #f59e0b;
   --error: #ef4444;
+  --streak: #f97316;
   --gradient-bg: linear-gradient(135deg, #ffffff 0%, #eaf2fb 50%, #dae6f8 100%);
   --gradient-card: linear-gradient(135deg, #ffffff 0%, #ecf2f9 100%);
   --gradient-accent: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
@@ -293,6 +383,23 @@
   --preview-bg: rgba(245, 158, 11, 0.12);
   --preview-text: #a16207;
   --preview-border: rgba(245, 158, 11, 0.35);
+
+  /* Form + overlays */
+  --text-on-accent: #0b1220;
+  --focus-ring: var(--accent-primary);
+  --overlay: rgba(0, 0, 0, 0.45);
+  --input-bg: var(--bg-tertiary);
+  --input-border: var(--border-primary);
+  --muted-bg: #eef4fb;
+  --muted-border: var(--border-primary);
+
+  /* Charts */
+  --chart-grid: rgba(0, 0, 0, 0.08);
+  --chart-tooltip-bg: rgba(255, 255, 255, 0.98);
+  --chart-tooltip-border: rgba(0, 0, 0, 0.08);
+  --chart-neutral: #597089;
+  --chart-neutral-strong: #334155;
+  --chart-contrast: #0f172a;
 }
 
 /* Solarized (dark) theme */
@@ -310,11 +417,12 @@
   --accent-light: #5fb3d7;
   --border-primary: #0a3942;
   --border-secondary: #0e4a57;
-  --shadow-primary: #002b36a9;
-  --shadow-secondary: #073642a9;
+  --shadow-primary: #002b3630;
+  --shadow-secondary: #07364230;
   --success: #2aa198;
   --warning: #b58900;
   --error: #dc322f;
+  --streak: #cb4b16;
   --gradient-bg: linear-gradient(135deg, #002b36 0%, #073642 50%, #003845 100%);
   --gradient-card: linear-gradient(135deg, #073642 0%, #0a3a46 100%);
   --gradient-accent: linear-gradient(135deg, #268bd2 0%, #2aa198 100%);
@@ -330,6 +438,23 @@
   --preview-bg: rgba(234, 179, 8, 0.18);
   --preview-text: #facc15;
   --preview-border: rgba(234, 179, 8, 0.35);
+
+  /* Form + overlays */
+  --text-on-accent: #0b1220;
+  --focus-ring: var(--accent-primary);
+  --overlay: rgba(0, 0, 0, 0.55);
+  --input-bg: var(--bg-tertiary);
+  --input-border: var(--border-primary);
+  --muted-bg: var(--bg-tertiary);
+  --muted-border: var(--border-secondary);
+
+  /* Charts */
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-tooltip-bg: rgba(0, 43, 54, 0.9);
+  --chart-tooltip-border: rgba(255, 255, 255, 0.08);
+  --chart-neutral: #9fb5b5;
+  --chart-neutral-strong: #c7d4d4;
+  --chart-contrast: #ffffff;
 }
 
 /* Solarized (light) theme */
@@ -347,11 +472,12 @@
   --accent-light: #5fb3d7;
   --border-primary: #93a1a1;
   --border-secondary: #839496;
-  --shadow-primary: #fdf6e3a9;
-  --shadow-secondary: #eee8d5a9;
+  --shadow-primary: #fdf6e330;
+  --shadow-secondary: #eee8d530;
   --success: #2aa198;
   --warning: #b58900;
   --error: #dc322f;
+  --streak: #cb4b16;
   --gradient-bg: linear-gradient(135deg, #fdf6e3 0%, #eee8d5 50%, #f0e4c8 100%);
   --gradient-card: linear-gradient(135deg, #eee8d5 0%, #f5efd8 100%);
   --gradient-accent: linear-gradient(135deg, #268bd2 0%, #2aa198 100%);
@@ -367,4 +493,70 @@
   --preview-bg: rgba(245, 158, 11, 0.12);
   --preview-text: #a16207;
   --preview-border: rgba(245, 158, 11, 0.35);
+
+  /* Form + overlays */
+  --text-on-accent: #0b1220;
+  --focus-ring: var(--accent-primary);
+  --overlay: rgba(0, 0, 0, 0.45);
+  --input-bg: var(--bg-tertiary);
+  --input-border: var(--border-primary);
+  --muted-bg: #f3ebd8;
+  --muted-border: var(--border-primary);
+
+  /* Charts */
+  --chart-grid: rgba(0, 0, 0, 0.08);
+  --chart-tooltip-bg: rgba(255, 255, 255, 0.98);
+  --chart-tooltip-border: rgba(0, 0, 0, 0.08);
+  --chart-neutral: #6b675b;
+  --chart-neutral-strong: #4b463c;
+  --chart-contrast: #0f172a;
+}
+
+/* Midnight (blue-purple) theme */
+.theme-midnight {
+  --bg-primary: #0b1021;
+  --bg-secondary: #11162a;
+  --bg-tertiary: #151c33;
+  --bg-card: #151c33;
+  --bg-hover: #1f2742;
+  --text-primary: #e5e9ff;
+  --text-secondary: #b3b9d8;
+  --text-muted: #7b82a6;
+  --accent-primary: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-light: #a78bfa;
+  --border-primary: #1f2742;
+  --border-secondary: #2a3556;
+  --shadow-primary: #0b102130;
+  --shadow-secondary: #11162a30;
+  --success: #22c55e;
+  --warning: #eab308;
+  --error: #f87171;
+  --streak: #f97316;
+
+  --scrollbar-size: 10px;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.08);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.14);
+  --scrollbar-thumb-active: rgba(255, 255, 255, 0.22);
+  --scrollbar-accent: color-mix(in oklab, var(--accent-primary) 70%, white);
+
+  --preview-bg: rgba(124, 58, 237, 0.14);
+  --preview-text: #c4b5fd;
+  --preview-border: rgba(124, 58, 237, 0.35);
+
+  --text-on-accent: #0f1222;
+  --focus-ring: #a78bfa;
+  --overlay: rgba(4, 6, 13, 0.55);
+  --input-bg: var(--bg-tertiary);
+  --input-border: var(--border-primary);
+  --muted-bg: var(--bg-tertiary);
+  --muted-border: var(--border-secondary);
+
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-tooltip-bg: rgba(12, 16, 28, 0.95);
+  --chart-tooltip-border: rgba(255, 255, 255, 0.08);
+  --chart-neutral: #94a3b8;
+  --chart-neutral-strong: #cbd5e1;
+  --chart-contrast: #ffffff;
 }

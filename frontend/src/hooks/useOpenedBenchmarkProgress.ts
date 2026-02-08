@@ -6,7 +6,7 @@ import { useUIState } from './useUIState'
 
 export function useOpenedBenchmarkProgress(input?: { id?: string | null; bench?: Benchmark | null }) {
   const resolvedId = input?.id ?? null
-  const [benchDifficultyIdx, setBenchDifficultyIdx] = useUIState<number>(`Benchmark:${resolvedId ?? ''}:difficultyIdx`, 0)
+  const [benchDifficultyIdx, setBenchDifficultyIdx] = useUIState<number>(`benchmark:${resolvedId ?? ''}:difficultyIdx`, 0)
 
   const [bench, setBench] = useState<Benchmark | null>(input?.bench ?? null)
   const [progress, setProgress] = useState<BenchmarkProgress | null>(null)
@@ -38,18 +38,48 @@ export function useOpenedBenchmarkProgress(input?: { id?: string | null; bench?:
   // Load progress for the resolved benchmark + difficulty index
   useEffect(() => {
     let cancelled = false
+    const isCancelled = () => cancelled
+
     setProgress(null)
     setError(null)
     if (!bench || !bench.difficulties?.length) return
+
     const idx = Math.min(Math.max(0, benchDifficultyIdx), bench.difficulties.length - 1)
     const did = bench.difficulties[idx]?.kovaaksBenchmarkId
     if (!did) return
+
     setLoading(true)
-    getBenchmarkProgress(did)
-      .then((data) => { if (!cancelled) setProgress(data) })
-      .catch((e) => { if (!cancelled) setError(String(e?.message || e)) })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
+
+    // Listen for background updates from backend
+    const offProgress = EventsOn(`benchmark:progress:${did}`, (data: BenchmarkProgress) => {
+      if (!isCancelled()) {
+        setProgress(data)
+      }
+    })
+
+    const load = async () => {
+      try {
+        // Fetch data (returns cached immediately if available, or waits for fresh)
+        const data = await getBenchmarkProgress(did)
+        if (isCancelled()) return
+        setProgress(data)
+        setLoading(false)
+      } catch (e) {
+        if (isCancelled()) return
+        setProgress(prev => {
+          if (!prev) setError(e instanceof Error ? e.message : String(e))
+          return prev
+        })
+        setLoading(false)
+      }
+    }
+
+    load()
+
+    return () => {
+      cancelled = true
+      try { offProgress() } catch { /* ignore */ }
+    }
   }, [bench, benchDifficultyIdx])
 
   // Live refresh: when scenarios are added/updated, re-fetch the current difficulty's progress
@@ -74,8 +104,8 @@ export function useOpenedBenchmarkProgress(input?: { id?: string | null; bench?:
       t = setTimeout(refresh, 700)
     }
 
-    const offAdd = EventsOn('ScenarioAdded', () => trigger())
-    const offUpd = EventsOn('ScenarioUpdated', () => trigger())
+    const offAdd = EventsOn('scenario:added', () => trigger())
+    const offUpd = EventsOn('scenario:updated', () => trigger())
 
     return () => {
       cancelled = true

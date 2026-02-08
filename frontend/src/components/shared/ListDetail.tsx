@@ -1,8 +1,8 @@
 import { ChevronLeft } from 'lucide-react'
 import type { Key, ReactNode, PointerEvent as ReactPointerEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AutoSizer, CellMeasurer, CellMeasurerCache, List, type ListRowProps } from 'react-virtualized'
 import { useUIState } from '../../hooks/useUIState'
+import { VirtualizedList } from './VirtualizedList'
 
 type VirtualizedProps<T> = {
   items: T[]
@@ -15,11 +15,17 @@ type VirtualizedProps<T> = {
 type BaseProps = {
   detail: ReactNode
   title?: string
+  /** Optional ID for persisted UI state. If omitted, title will be used. */
+  id?: string
   initialWidth?: number // px
   minWidth?: number // px
   maxWidth?: number // px
   // Optional header rendered above the detail content (right pane)
   detailHeader?: ReactNode
+  // Optional actions rendered in the sidebar header (e.g. filter button)
+  actions?: ReactNode
+  // Optional content rendered at the top of the list (e.g. search/filter inputs)
+  listHeader?: ReactNode
 }
 
 type Props<T = any> = BaseProps & VirtualizedProps<T>
@@ -36,14 +42,18 @@ export function ListDetail<T = any>({
   emptyPlaceholder,
   detail,
   title = 'Recent',
+  id,
   initialWidth = 280,
   minWidth = 240,
   maxWidth = 640,
   detailHeader,
+  actions,
+  listHeader,
 }: Props<T>) {
-  const [width, setWidth] = useUIState<number>(`ListDetail:${title}:width`, initialWidth)
+  const key = id ?? title
+  const [width, setWidth] = useUIState<number>(`ListDetail:${key}:width`, initialWidth)
   // collapsed = user-intended collapsed state (pinned closed)
-  const [collapsed, setCollapsed] = useUIState<boolean>(`ListDetail:${title}:collapsed`, false)
+  const [collapsed, setCollapsed] = useUIState<boolean>(`ListDetail:${key}:collapsed`, false)
   // hoverOpen = temporary open state while hovering when collapsed
   const [hoverOpen, setHoverOpen] = useState(false)
   // isResizing = true while the user is actively dragging the resize handle
@@ -177,16 +187,19 @@ export function ListDetail<T = any>({
         <div
           ref={sidebarRef}
           aria-expanded={!isCollapsed}
-          className={`absolute left-0 top-0 bottom-0 bg-[var(--bg-secondary)] rounded border border-[var(--border-primary)] flex flex-col min-h-0 overflow-hidden ${isResizing ? 'transition-none' : 'transition-all duration-150 ease-out'}`}
+          className={`absolute left-0 top-0 bottom-0 bg-surface-2 rounded border border-primary flex flex-col min-h-0 overflow-hidden ${isResizing ? 'transition-none' : 'transition-all duration-150 ease-out'}`}
           style={{ width: `${isExpanded ? clampedWidth : COLLAPSED_W}px`, willChange: 'width' }}
         >
           {/* Header */}
-          <div ref={headerRef} className={`flex items-center ${isExpanded ? 'justify-between px-3' : 'justify-center px-1'} py-2 border-b border-[var(--border-primary)] shrink-0`}>
+          <div ref={headerRef} className={`flex items-center ${isExpanded ? 'justify-between px-3' : 'justify-center px-1'} py-2 border-b border-primary shrink-0`}>
             {isExpanded && (
-              <div className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wide">{title}</div>
+              <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
+                <div className="text-xs font-medium text-secondary uppercase tracking-wide truncate">{title}</div>
+                {actions && <div className="ml-auto flex items-center gap-1">{actions}</div>}
+              </div>
             )}
             <button
-              className="p-1 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
+              className="p-1 rounded hover:bg-surface-3 text-primary"
               title={collapsed ? 'Expand' : 'Collapse'}
               aria-label={collapsed ? 'Expand' : 'Collapse'}
               onClick={() => (collapsed ? expand() : collapse())}
@@ -197,10 +210,11 @@ export function ListDetail<T = any>({
 
           {/* List content */}
           {isExpanded ? (
-            <div className="min-h-0 flex-1">
-              <div className="h-full">
+            <div className="min-h-0 flex-1 flex flex-col">
+              {listHeader && <div className="shrink-0 border-b border-primary bg-surface-2">{listHeader}</div>}
+              <div className="flex-1 min-h-0 relative">
                 {items.length === 0 ? (
-                  emptyPlaceholder ?? <div className="p-3 text-sm text-[var(--text-secondary)]">No items.</div>
+                  emptyPlaceholder ?? <div className="p-3 text-sm text-secondary">No items.</div>
                 ) : (
                   <VirtualizedList
                     items={items}
@@ -224,7 +238,7 @@ export function ListDetail<T = any>({
             role="separator"
             aria-orientation="vertical"
             tabIndex={0}
-            className="absolute inset-y-0 right-0 w-4 cursor-col-resize hover:bg-[var(--bg-tertiary)]/50 focus:outline-none focus:ring-1 focus:ring-[var(--border-primary)]"
+            className="absolute inset-y-0 right-0 w-4 cursor-col-resize hover:bg-surface-3/50 focus:outline-none focus:ring-1 focus:ring-primary"
             onPointerDown={onPointerDown}
             title="Drag to resize"
             onDoubleClick={() => { if (!collapsed) { setWidth(initialWidth); lastWidthRef.current = initialWidth } else { expand() } }}
@@ -242,93 +256,20 @@ export function ListDetail<T = any>({
               }
             }}
           >
-            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[var(--border-primary)]/60" />
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-primary/60" />
           </div>
         </div>
       </div>
 
       {/* Detail */}
-      <div className="flex-1 bg-[var(--bg-secondary)] rounded border border-[var(--border-primary)] overflow-y-auto min-h-0 flex flex-col">
+      <div className="flex-1 bg-surface-2 rounded border border-primary overflow-y-auto min-h-0 flex flex-col">
         {detailHeader ? (
-          <div className="px-3 py-2 border-b border-[var(--border-primary)] shrink-0">{detailHeader}</div>
+          <div className="px-3 py-2 border-b border-primary shrink-0">{detailHeader}</div>
         ) : null}
         <div className="p-3 flex-1 min-h-0 overflow-y-auto">
           {detail}
         </div>
       </div>
     </div>
-  )
-}
-
-// Virtualized renderer for arbitrary item arrays using react-virtualized.
-type VirtualizedListProps<T> = {
-  items: T[]
-  renderItem: (item: T, index: number) => ReactNode
-  getKey?: (item: T, index: number) => Key
-  rowHeight?: number
-  isResizing?: boolean
-}
-
-function VirtualizedList<T>({ items, renderItem, getKey, rowHeight, isResizing = false }: VirtualizedListProps<T>) {
-  const listRef = useRef<List | null>(null)
-
-  // Fixed height if provided, otherwise dynamic measurement cache
-  const cache = useMemo(() => new CellMeasurerCache({ fixedWidth: true, defaultHeight: rowHeight ?? 56 }), [rowHeight])
-
-  // When width changes, parent will re-render and AutoSizer will report new width.
-  // react-virtualized handles re-layout. If using dynamic heights, clear cache on width change.
-  const onResize = useCallback(() => {
-    if (!rowHeight) {
-      // Avoid expensive clear/recompute on every pixel while actively dragging
-      if (isResizing) return
-      cache.clearAll()
-      if (listRef.current) listRef.current.recomputeRowHeights()
-    }
-  }, [cache, rowHeight, isResizing])
-
-  // After dragging ends, do a single recompute to correct row heights
-  const prevIsResizingRef = useRef(isResizing)
-  useEffect(() => {
-    const wasResizing = prevIsResizingRef.current
-    prevIsResizingRef.current = isResizing
-    if (!rowHeight && wasResizing && !isResizing) {
-      const id = window.requestAnimationFrame(() => {
-        cache.clearAll()
-        if (listRef.current) listRef.current.recomputeRowHeights()
-      })
-      return () => window.cancelAnimationFrame(id)
-    }
-  }, [isResizing, rowHeight, cache])
-
-  const rowRenderer = useCallback(({ index, key, parent, style }: ListRowProps) => {
-    const child = renderItem(items[index], index)
-    const rowKey = getKey ? getKey(items[index], index) : key
-    return (
-      <CellMeasurer cache={cache} columnIndex={0} rowIndex={index} parent={parent} key={rowKey}>
-        {({ measure }) => (
-          <div style={style} onLoad={measure} className="pb-2 first:pt-2">
-            <div className="px-2">{child}</div>
-          </div>
-        )}
-      </CellMeasurer>
-    )
-  }, [items, renderItem, getKey, cache])
-
-  return (
-    <AutoSizer onResize={onResize}>
-      {({ width, height }) => (
-        <List
-          ref={ref => { listRef.current = ref }}
-          width={width}
-          height={height}
-          rowCount={items.length}
-          overscanRowCount={6}
-          rowHeight={rowHeight ?? cache.rowHeight}
-          deferredMeasurementCache={rowHeight ? undefined : cache}
-          rowRenderer={rowRenderer}
-          style={{ outline: 'none' }}
-        />
-      )}
-    </AutoSizer>
   )
 }

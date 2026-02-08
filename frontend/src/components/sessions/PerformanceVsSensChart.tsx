@@ -1,10 +1,13 @@
-import { useMemo } from 'react'
-import { Scatter } from 'react-chartjs-2'
-import { ChartBox } from '..'
-import { useChartTheme } from '../../hooks/useChartTheme'
-import { usePageState } from '../../hooks/usePageState'
-import { CHART_DECIMALS, formatNumber, formatPct, formatUiValueForLabel, getScenarioName } from '../../lib/utils'
-import type { ScenarioRecord } from '../../types/ipc'
+import { useMemo } from 'react';
+import { Scatter } from 'react-chartjs-2';
+import { useChartTheme } from '../../hooks/useChartTheme';
+import { usePageState } from '../../hooks/usePageState';
+import { CHART_DECIMALS } from '../../lib/constants';
+import { colorWithAlpha, cssColorToRGB } from '../../lib/theme';
+import { formatNumber, formatPct, formatUiValueForLabel, getScenarioName } from '../../lib/utils';
+import type { ScenarioRecord } from '../../types/ipc';
+import { ChartBox } from '../shared/ChartBox';
+import { Dropdown } from '../shared/Dropdown';
 
 type PerformanceVsSensChartProps = {
   items: ScenarioRecord[]
@@ -13,6 +16,7 @@ type PerformanceVsSensChartProps = {
 
 export function PerformanceVsSensChart({ items, scenarioName }: PerformanceVsSensChartProps) {
   const colors = useChartTheme()
+  const [isExpanded, setIsExpanded] = usePageState<boolean>(`sens:expanded:${scenarioName}`, false)
   // Persist the selected metric per-scenario so the user's choice sticks while browsing
   const [metric, setMetric] = usePageState<'score' | 'acc' | 'ttk'>(`sens:metric:${scenarioName}`, 'score')
   // We'll compute two things here: the plotted points (aligned to bin centers) and
@@ -105,17 +109,21 @@ export function PerformanceVsSensChart({ items, scenarioName }: PerformanceVsSen
   const maxIndex = useMemo(() => points.reduce((m, p) => Math.max(m, p.i), -1), [points])
 
   const lerp = (a: number, b: number, t: number) => a + (b - a) * t
-  // Slate(older) -> Amber(newer)
+  // Newest (t=0) -> Oldest (t=1) gradient coloring
+  const neutralRgb = cssColorToRGB(colors.neutral, [148, 163, 184])
+  const warnRgb = cssColorToRGB(colors.warning, [234, 179, 8])
   const colorAt = (t: number, forBorder = false) => {
     // clamp
     if (t < 0) t = 0
     if (t > 1) t = 1
-    const o = { r: 148, g: 163, b: 184, a: forBorder ? 0.7 : 0.45 }
-    const n = { r: 234, g: 179, b: 8, a: forBorder ? 0.95 : 0.8 }
-    const r = Math.round(lerp(o.r, n.r, t))
-    const g = Math.round(lerp(o.g, n.g, t))
-    const b = Math.round(lerp(o.b, n.b, t))
-    const a = lerp(o.a, n.a, t)
+    // Start (t=0, newest) is Warning/Amber. End (t=1, oldest) is Neutral/Gray.
+    const start = { r: warnRgb[0], g: warnRgb[1], b: warnRgb[2], a: forBorder ? 0.95 : 0.8 }
+    const end = { r: neutralRgb[0], g: neutralRgb[1], b: neutralRgb[2], a: forBorder ? 0.7 : 0.45 }
+
+    const r = Math.round(lerp(start.r, end.r, t))
+    const g = Math.round(lerp(start.g, end.g, t))
+    const b = Math.round(lerp(start.b, end.b, t))
+    const a = lerp(start.a, end.a, t)
     return `rgba(${r}, ${g}, ${b}, ${a})`
   }
 
@@ -131,8 +139,8 @@ export function PerformanceVsSensChart({ items, scenarioName }: PerformanceVsSen
         label: 'Sensitivity histogram',
         data: bins.map(b => ({ x: b.center, y: b.count })),
         parsing: false,
-        backgroundColor: 'rgba(148,163,184,0.06)',
-        borderColor: 'rgba(148,163,184,0.08)',
+        backgroundColor: colorWithAlpha(colors.neutral, 0.08, 'rgba(148,163,184,0.08)'),
+        borderColor: colorWithAlpha(colors.neutral, 0.25, 'rgba(148,163,184,0.25)'),
         borderWidth: 1,
         // Draw behind the scatter
         order: 1,
@@ -161,16 +169,16 @@ export function PerformanceVsSensChart({ items, scenarioName }: PerformanceVsSen
         parsing: false,
         showLine: false,
         // Fallback colors (overridden per-point below)
-        borderColor: 'rgb(234, 179, 8)',
-        backgroundColor: 'rgba(234, 179, 8, 0.65)',
+        borderColor: colors.warning,
+        backgroundColor: colorWithAlpha(colors.warning, 0.65, 'rgba(234,179,8,0.65)'),
         pointBackgroundColor: (ctx: any) => {
           const p = ctx.raw as { i: number }
-          const t = maxIndex > 0 ? p.i / maxIndex : 1
+          const t = maxIndex > 0 ? p.i / maxIndex : 0
           return colorAt(t, false)
         },
         pointBorderColor: (ctx: any) => {
           const p = ctx.raw as { i: number }
-          const t = maxIndex > 0 ? p.i / maxIndex : 1
+          const t = maxIndex > 0 ? p.i / maxIndex : 0
           return colorAt(t, true)
         },
         pointRadius: 3,
@@ -180,7 +188,7 @@ export function PerformanceVsSensChart({ items, scenarioName }: PerformanceVsSen
         order: 2,
       },
     ],
-  }), [bins, points, maxIndex, metricLabel])
+  }), [bins, points, maxIndex, metricLabel, colors.neutral, colors.warning, neutralRgb, warnRgb])
 
   // Use original raw bounds (before aligning to bin centers) for axis suggestions
   const xMax = rawXMax
@@ -231,10 +239,12 @@ export function PerformanceVsSensChart({ items, scenarioName }: PerformanceVsSen
         grid: { color: colors.grid },
         suggestedMin: Number.isFinite(xMin) ? Math.max(0, Math.floor(xMin - 1)) : 0,
         suggestedMax: Math.ceil((xMax || 20) * 1.05),
+        title: { display: isExpanded, text: 'Sensitivity (cm/360)', color: colors.textSecondary }
       },
       y: {
         ticks: { color: colors.textSecondary, callback: metric === 'acc' ? (v: any) => formatPct(v, CHART_DECIMALS.pctTick) : undefined },
         grid: { color: colors.grid },
+        title: { display: isExpanded, text: metricLabel, color: colors.textSecondary }
       },
       // Secondary axis for histogram counts
       yCount: {
@@ -243,36 +253,45 @@ export function PerformanceVsSensChart({ items, scenarioName }: PerformanceVsSen
         grid: { display: false },
         beginAtZero: true,
         suggestedMax: bins && bins.length ? Math.max(1, Math.ceil(bins.reduce((m, b) => Math.max(m, b.count), 0) * 1.15)) : undefined,
+        title: { display: isExpanded, text: 'Run Count', color: colors.textSecondary }
       },
     },
-  }), [colors, xMax, xMin, metric, bins])
+  }), [colors, xMax, xMin, metric, bins, isExpanded])
+
+  const infoContent = (
+    <div>
+      <div className="mb-2">Each point is a run for this scenario. X is your effective sensitivity (cm per full 360° turn) and Y is the selected performance metric ({metric === 'score' ? 'Score' : metric === 'acc' ? 'Accuracy (%)' : 'Real Avg TTK (s)'}). Hover points or histogram bars for exact values and counts.</div>
+      <div className="mb-2 font-medium">How to interpret</div>
+      <ul className="list-disc pl-5 text-secondary">
+        <li>Histogram bars show where most runs cluster; peaks are your most commonly used sensitivities.</li>
+        <li>Scatter points show per-run performance aligned to bin centers (hover to see actual sensitivity). Clusters with high metric values indicate sweet spots.</li>
+        <li>When the selected metric is Accuracy: look for sensitivity ranges that maximize accuracy. When TTK: lower is better (find minima).</li>
+        <li>Point color indicates recency - use it to detect whether newer runs favor different sensitivities.</li>
+        <li>Outliers may appear as isolated points; use counts from the histogram to judge whether a trend is meaningful.</li>
+      </ul>
+    </div>
+  )
 
   return (
     <ChartBox
       title="Performance vs Sens (cm/360)"
-      controls={{
-        dropdown: {
-          label: 'Metric',
-          value: metric,
-          onChange: (v: string) => setMetric(v as any),
-          options: [
+      expandable={true}
+      isExpanded={isExpanded}
+      onExpandChange={setIsExpanded}
+      actions={
+        <Dropdown
+          size="sm"
+          label="Metric"
+          value={metric}
+          onChange={(v) => setMetric(v as any)}
+          options={[
             { label: 'Score', value: 'score' },
             { label: 'Accuracy (%)', value: 'acc' },
             { label: 'Real Avg TTK (s)', value: 'ttk' },
-          ],
-        },
-      }}
-      info={<div>
-        <div className="mb-2">Each point is a run for this scenario. X is your effective sensitivity (cm per full 360° turn) and Y is the selected performance metric ({metric === 'score' ? 'Score' : metric === 'acc' ? 'Accuracy (%)' : 'Real Avg TTK (s)'}). Hover points or histogram bars for exact values and counts.</div>
-        <div className="mb-2 font-medium">How to interpret</div>
-        <ul className="list-disc pl-5 text-[var(--text-secondary)]">
-          <li>Histogram bars show where most runs cluster; peaks are your most commonly used sensitivities.</li>
-          <li>Scatter points show per-run performance aligned to bin centers (hover to see actual sensitivity). Clusters with high metric values indicate sweet spots.</li>
-          <li>When the selected metric is Accuracy: look for sensitivity ranges that maximize accuracy. When TTK: lower is better (find minima).</li>
-          <li>Point color indicates recency - use it to detect whether newer runs favor different sensitivities.</li>
-          <li>Outliers may appear as isolated points; use counts from the histogram to judge whether a trend is meaningful.</li>
-        </ul>
-      </div>}
+          ]}
+        />
+      }
+      info={infoContent}
       height={300}
     >
       <div className="h-full">

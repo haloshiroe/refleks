@@ -1,6 +1,19 @@
 import type { ScenarioRecord } from '../types/ipc';
+import { BENCHMARK_CATEGORY_ABBREVIATIONS, DEFAULT_BENCHMARK_CATEGORY, MISSING_STR } from './constants';
 
-export const MISSING_STR = 'N/A'
+export function getBenchmarkCategory(abbreviation: string): string {
+  const abbr = (abbreviation ?? '').toString().trim()
+  let category = DEFAULT_BENCHMARK_CATEGORY
+  if (abbr) {
+    for (const [cat, aliases] of Object.entries(BENCHMARK_CATEGORY_ABBREVIATIONS)) {
+      if (aliases.some(a => a === abbr)) {
+        category = cat
+        break
+      }
+    }
+  }
+  return category
+}
 
 export function getScenarioName(it: ScenarioRecord | { fileName?: string; stats?: Record<string, any> }): string {
   const stats = (it as any).stats as Record<string, any> | undefined
@@ -68,11 +81,15 @@ export function formatPct01(v: any): string {
 // Generic numeric formatter used across the UI. Trims trailing zeros for
 // readability (e.g., 1.00 -> 1, 1.50 -> 1.5).
 export function formatNumber(v: any, decimals = 2, trimTrailingZeros = true): string {
+  if (v == null || v === '') return MISSING_STR
   const n = typeof v === 'number' ? v : Number(v)
-  if (!isFinite(n)) return MISSING_STR
-  let s = n.toFixed(decimals)
-  if (trimTrailingZeros && decimals > 0) s = s.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
-  return s
+  if (!Number.isFinite(n)) return MISSING_STR
+
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: trimTrailingZeros ? 0 : decimals,
+    maximumFractionDigits: decimals,
+    useGrouping: true
+  }).format(n)
 }
 
 // Format a value that may be either a fraction (0..1) or an already-multiplied
@@ -90,7 +107,31 @@ export function formatPct(v: any, decimals = 1): string {
 export function formatSeconds(v: any, decimals = 2): string {
   const n = typeof v === 'number' ? v : Number(v)
   if (!isFinite(n)) return MISSING_STR
-  return `${formatNumber(n, decimals)}s`
+  return n.toFixed(decimals) + 's'
+}
+
+export function getHighScores(scenarios: ScenarioRecord[]): Map<string, number> {
+  const best = new Map<string, number>()
+  for (const s of scenarios) {
+    const name = getScenarioName(s)
+    const score = Number(s.stats['Score'] ?? 0)
+    if (!best.has(name) || best.get(name)! < score) {
+      best.set(name, score)
+    }
+  }
+  return best
+}
+
+export function getBestRuns(scenarios: ScenarioRecord[]): ScenarioRecord[] {
+  const best = new Map<string, ScenarioRecord>()
+  for (const s of scenarios) {
+    const name = getScenarioName(s)
+    const score = Number(s.stats['Score'] ?? 0)
+    if (!best.has(name) || Number(best.get(name)!.stats['Score'] ?? 0) < score) {
+      best.set(name, s)
+    }
+  }
+  return Array.from(best.values())
 }
 
 // Helper for formatting tooltip values based on a label hint. This centralizes
@@ -123,23 +164,6 @@ export function extractChartValue(ctx: any): number | undefined {
   return Number.isFinite(n) ? n : undefined
 }
 
-// Common chart formatting decimal defaults
-export const CHART_DECIMALS = {
-  pctTick: 0 as const,
-  pctTooltip: 1 as const,
-  numTick: 0 as const,
-  numTooltip: 0 as const,
-  ttkTick: 1 as const,
-  ttkTooltip: 3 as const,
-  sensTick: 2 as const,
-  sensTooltip: 2 as const,
-  kpmTick: 0 as const,
-  kpmTooltip: 1 as const,
-  detailNum: 3 as const,
-  timeTick: 0 as const,
-  timeTooltip: 2 as const,
-}
-
 // Format seconds for mm:ss with optional fractional seconds (e.g., 3.45 -> "0:03.45")
 export function formatMmSs(totalSeconds: any, decimals = 0): string {
   const n = typeof totalSeconds === 'number' ? totalSeconds : Number(totalSeconds)
@@ -152,4 +176,8 @@ export function formatMmSs(totalSeconds: any, decimals = 0): string {
   const [intPart, frac] = sStr.split('.')
   const intPadded = intPart.padStart(2, '0')
   return frac ? `${m}:${intPadded}.${frac}` : `${m}:${intPadded}`
+}
+
+export function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n))
 }

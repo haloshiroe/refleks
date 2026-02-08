@@ -1,90 +1,110 @@
-import type { ReactNode } from 'react'
-import { useEffect, useState } from 'react'
-import { BrowserOpenURL } from '../../../wailsjs/runtime'
-import { Button, Dropdown } from '../../components'
-import { useStore } from '../../hooks/useStore'
-import { checkForUpdates, downloadAndInstallUpdate, getSettings, getVersion, resetSettings, updateSettings } from '../../lib/internal'
-import { applyTheme, getSavedTheme, setTheme, THEMES, type Theme } from '../../lib/theme'
-import { MISSING_STR } from '../../lib/utils'
-import type { Settings, UpdateInfo } from '../../types/ipc'
+import type { ReactNode } from 'react';
+import { useEffect, useState } from 'react';
+import { BrowserOpenURL } from '../../../wailsjs/runtime';
+import { ClearCacheModal } from '../../components/settings/ClearCacheModal';
+import { ResetSettingsModal } from '../../components/settings/ResetSettingsModal';
+import { Button } from '../../components/shared/Button';
+import { Dropdown } from '../../components/shared/Dropdown';
+import { Loading } from '../../components/shared/Loading';
+import { useStore } from '../../hooks/useStore';
+import { MISSING_STR } from '../../lib/constants';
+import { checkForUpdates, clearCache, downloadAndInstallUpdate, getSettings, getVersion, quitApp, resetSettings, setAutostart, updateSettings } from '../../lib/internal';
+import { FONTS, setFont, setTheme, THEMES, type Font, type Theme } from '../../lib/theme';
+import type { Settings, UpdateInfo } from '../../types/ipc';
 
 export function SettingsPage() {
   const setSessionGap = useStore(s => s.setSessionGap)
-  const [steamDir, setSteamDir] = useState('')
-  const [steamIdOverride, setSteamIdOverride] = useState('')
-  const [statsPath, setStatsPath] = useState('')
-  const [tracesPath, setTracesPath] = useState('')
-  const [gap, setGap] = useState(15)
-  const [theme, setThemeState] = useState<Theme>(getSavedTheme())
-  const [mouseEnabled, setMouseEnabled] = useState(false)
-  const [mouseBuffer, setMouseBuffer] = useState(10)
-  const [maxExisting, setMaxExisting] = useState(500)
+  const setSessionNotes = useStore(s => s.setSessionNotes)
+
+  const [settings, setSettings] = useState<Settings | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
+
   // Updates state
   const [currentVersion, setCurrentVersion] = useState<string>("")
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
   const [checking, setChecking] = useState<boolean>(false)
   const [checkError, setCheckError] = useState<string>("")
+  const [saving, setSaving] = useState(false)
+  const [isResetOpen, setIsResetOpen] = useState(false)
+  const [isClearCacheOpen, setIsClearCacheOpen] = useState(false)
 
   useEffect(() => {
-    // Load settings from backend and trust backend-sanitized values.
-    getSettings()
-      .then((s: Settings) => {
-        if (!s) return
-        setSteamDir((s as any).steamInstallDir || '')
-        setSteamIdOverride((s as any).steamIdOverride || '')
-        setStatsPath(s.statsDir || '')
-        setTracesPath((s as any).tracesDir || '')
-        setGap(s.sessionGapMinutes)
-        setThemeState(s.theme)
-        applyTheme(s.theme)
-        setMouseEnabled(Boolean(s.mouseTrackingEnabled))
-        setMouseBuffer(Number(s.mouseBufferMinutes))
-        setMaxExisting(Number((s as any).maxExistingOnStart))
-      })
-      .catch(() => { })
-    // Load current version for display
+    getSettings().then(setSettings).catch(() => { })
     getVersion().then(v => setCurrentVersion(String(v || ''))).catch(() => setCurrentVersion(''))
   }, [])
 
-  const save = async () => {
-    const payload: Settings = { steamInstallDir: steamDir, steamIdOverride, statsDir: statsPath, tracesDir: tracesPath, sessionGapMinutes: gap, theme, mouseTrackingEnabled: mouseEnabled, mouseBufferMinutes: mouseBuffer, maxExistingOnStart: maxExisting }
+  const updateField = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+    setSettings(prev => {
+      if (!prev) return null
+      const next = { ...prev, [key]: value }
+      return next
+    })
+  }
+
+  const handleAutostartChange = async (enabled: boolean) => {
     try {
-      await updateSettings(payload)
-      setTheme(theme)
-      setSessionGap(gap)
+      await setAutostart(enabled)
+      updateField('autostartEnabled', enabled)
     } catch (e) {
-      console.error('UpdateSettings error:', e)
+      console.error('SetAutostart error:', e)
+      alert('Failed to update autostart: ' + (e as Error)?.message)
     }
   }
-  const onReset = async () => {
+
+  const save = async () => {
+    if (!settings || saving) return
+    setSaving(true)
     try {
-      await resetSettings()
+      await updateSettings(settings)
+      setTheme(settings.theme)
+      setFont(settings.font)
+      setSessionGap(settings.sessionGapMinutes)
+    } catch (e) {
+      console.error('UpdateSettings error:', e)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleReset = async (config: boolean, favorites: boolean, scenarioNotes: boolean, sessionNotes: boolean) => {
+    try {
+      await resetSettings(config, favorites, scenarioNotes, sessionNotes)
       const s = await getSettings()
-      setSteamDir((s as any).steamInstallDir || '')
-      setSteamIdOverride((s as any).steamIdOverride || '')
-      setStatsPath(s.statsDir || '')
-      setTracesPath((s as any).tracesDir || '')
-      setGap(s.sessionGapMinutes)
-      setThemeState(s.theme)
+      setSettings(s)
+
       setTheme(s.theme)
-      setMouseEnabled(Boolean(s.mouseTrackingEnabled))
-      setMouseBuffer(Number(s.mouseBufferMinutes))
-      setMaxExisting(Number((s as any).maxExistingOnStart))
+      setFont(s.font)
+      setSessionGap(s.sessionGapMinutes)
+
+      if (sessionNotes) {
+        setSessionNotes(s.sessionNotes || {})
+      }
     } catch (e) {
       console.error('ResetSettings error:', e)
     }
   }
+
+  const handleClearCache = async () => {
+    try {
+      await clearCache()
+    } catch (e) {
+      console.error('ClearCache error:', e)
+      alert('Failed to clear cache: ' + (e as Error)?.message)
+    }
+  }
+
+  if (!settings) return <Loading />
+
   return (
     <div className="space-y-4 h-full overflow-auto p-4">
       <div className="text-lg font-medium">Settings</div>
       <div className="space-y-6 max-w-5xl">
         {/* Updates */}
         <section className="space-y-3">
-          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Updates</h3>
-          <div className="space-y-3 p-3 rounded border border-[var(--border-primary)] bg-[var(--bg-secondary)]">
-            <div className="text-sm text-[var(--text-secondary)]">
-              Current version: <span className="text-[var(--text-primary)]">v{currentVersion || MISSING_STR}</span>
+          <h3 className="text-sm font-semibold text-secondary uppercase tracking-wider">Updates</h3>
+          <div className="space-y-3 p-3 rounded border border-primary bg-surface-2">
+            <div className="text-sm text-secondary">
+              Current version: <span className="text-primary">v{currentVersion || MISSING_STR}</span>
             </div>
             {update?.hasUpdate ? (
               <div className="flex items-center gap-2">
@@ -107,9 +127,9 @@ export function SettingsPage() {
                   Install update
                 </Button>
                 <a
-                  className="text-xs underline underline-offset-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                  href="https://refleks-app.com/updates/"
-                  onClick={(e) => { e.preventDefault(); BrowserOpenURL('https://refleks-app.com/updates/') }}
+                  className="text-xs underline underline-offset-2 text-secondary hover:text-primary"
+                  href="https://refleks-app.com/changelog/"
+                  onClick={(e) => { e.preventDefault(); BrowserOpenURL('https://refleks-app.com/changelog/') }}
                 >
                   What’s new
                 </a>
@@ -138,14 +158,14 @@ export function SettingsPage() {
                 </Button>
                 {checkError && <span className="text-xs text-red-400">{checkError}</span>}
                 {update && !update.hasUpdate && !checking && (
-                  <span className="text-xs text-[var(--text-secondary)]">You’re up to date.</span>
+                  <span className="text-xs text-secondary">You’re up to date.</span>
                 )}
                 <a
-                  className="text-xs underline underline-offset-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                  href="https://refleks-app.com/updates/"
-                  onClick={(e) => { e.preventDefault(); BrowserOpenURL('https://refleks-app.com/updates/') }}
+                  className="text-xs underline underline-offset-2 text-secondary hover:text-primary"
+                  href="https://refleks-app.com/changelog/"
+                  onClick={(e) => { e.preventDefault(); BrowserOpenURL('https://refleks-app.com/changelog/') }}
                 >
-                  View updates page
+                  View changelog
                 </a>
               </div>
             )}
@@ -154,19 +174,33 @@ export function SettingsPage() {
 
         {/* General (primary settings) */}
         <section className="space-y-3">
-          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider">General</h3>
-          <div className="space-y-3 p-3 rounded border border-[var(--border-primary)] bg-[var(--bg-secondary)]">
+          <h3 className="text-sm font-semibold text-secondary uppercase tracking-wider">General</h3>
+          <div className="space-y-3 p-3 rounded border border-primary bg-surface-2">
             <Field label="Stats directory">
               <input
-                value={statsPath}
-                onChange={e => setStatsPath(e.target.value)}
-                className="w-full px-2 py-1 rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)]"
+                value={settings.statsDir}
+                onChange={e => updateField('statsDir', e.target.value)}
+                className="w-full px-2 py-1 rounded bg-surface-3 border border-primary"
               />
+            </Field>
+            <Field label="Autostart with Kovaak's">
+              <div className="flex flex-col gap-1">
+                <Dropdown
+                  value={settings.autostartEnabled ? 'on' : 'off'}
+                  onChange={(v: string) => handleAutostartChange(v === 'on')}
+                  options={[{ label: 'On', value: 'on' }, { label: 'Off', value: 'off' }]}
+                  size="md"
+                />
+                {/* <span className="text-xs text-secondary">
+                  When enabled, RefleK's will start hidden with Windows and open automatically when Kovaak's launches.
+                  Closing the window will keep it in memory.
+                </span> */}
+              </div>
             </Field>
             <Field label="Enable mouse tracking (Windows)">
               <Dropdown
-                value={mouseEnabled ? 'on' : 'off'}
-                onChange={(v: string) => setMouseEnabled(v === 'on')}
+                value={settings.mouseTrackingEnabled ? 'on' : 'off'}
+                onChange={(v: string) => updateField('mouseTrackingEnabled', v === 'on')}
                 options={[{ label: 'On', value: 'on' }, { label: 'Off', value: 'off' }]}
                 size="md"
               />
@@ -174,19 +208,34 @@ export function SettingsPage() {
             <Field label="Session gap (minutes)">
               <input
                 type="number"
-                value={gap}
-                onChange={e => setGap(Number(e.target.value))}
-                className="w-24 px-2 py-1 rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)]"
+                value={settings.sessionGapMinutes}
+                onChange={e => updateField('sessionGapMinutes', Number(e.target.value))}
+                className="w-24 px-2 py-1 rounded bg-surface-3 border border-primary"
               />
             </Field>
+          </div>
+        </section>
+
+        {/* Appearance */}
+        <section className="space-y-3">
+          <h3 className="text-sm font-semibold text-secondary uppercase tracking-wider">Appearance</h3>
+          <div className="space-y-3 p-3 rounded border border-primary bg-surface-2">
             <Field label="Theme">
               <Dropdown
-                value={theme}
-                onChange={(v: string) => setThemeState(v as Theme)}
+                value={settings.theme}
+                onChange={(v: string) => updateField('theme', v as Theme)}
                 options={THEMES.map(t => ({
                   label: t.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' '),
                   value: t,
                 }))}
+                size="md"
+              />
+            </Field>
+            <Field label="Font">
+              <Dropdown
+                value={settings.font}
+                onChange={(v: string) => updateField('font', v as Font)}
+                options={FONTS.map(f => ({ label: f.label, value: f.id }))}
                 size="md"
               />
             </Field>
@@ -196,54 +245,73 @@ export function SettingsPage() {
         {/* Advanced - nested under General as a collapsible block */}
         <section className="space-y-2">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Advanced</h3>
+            <h3 className="text-sm font-semibold text-secondary uppercase tracking-wider">Advanced</h3>
             <button
               onClick={() => setShowAdvanced(v => !v)}
-              className="text-xs px-2 py-1 rounded bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
+              className="text-xs px-2 py-1 rounded bg-surface-2 border border-primary text-secondary hover:bg-surface-3"
             >
               {showAdvanced ? 'Hide' : 'Show'} advanced
             </button>
           </div>
           {showAdvanced && (
-            <div className="space-y-3 p-3 rounded border border-[var(--border-primary)] bg-[var(--bg-secondary)]">
+            <div className="space-y-3 p-3 rounded border border-primary bg-surface-2">
               <Field label="Steam install directory">
                 <input
-                  value={steamDir}
-                  onChange={e => setSteamDir(e.target.value)}
-                  className="w-full px-2 py-1 rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)]"
+                  value={settings.steamInstallDir || ''}
+                  onChange={e => updateField('steamInstallDir', e.target.value)}
+                  className="w-full px-2 py-1 rounded bg-surface-3 border border-primary"
                 />
               </Field>
               <Field label="SteamID override (optional)">
                 <input
-                  value={steamIdOverride}
-                  onChange={e => setSteamIdOverride(e.target.value)}
+                  value={settings.steamIdOverride || ''}
+                  onChange={e => updateField('steamIdOverride', e.target.value)}
                   placeholder="7656119..."
-                  className="w-full px-2 py-1 rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)]"
+                  className="w-full px-2 py-1 rounded bg-surface-3 border border-primary"
+                />
+              </Field>
+              <Field label="Persona Name override (optional)">
+                <input
+                  value={settings.personaNameOverride || ''}
+                  onChange={e => updateField('personaNameOverride', e.target.value)}
+                  placeholder="Steam Persona Name"
+                  className="w-full px-2 py-1 rounded bg-surface-3 border border-primary"
                 />
               </Field>
               <Field label="Traces directory">
                 <input
-                  value={tracesPath}
-                  onChange={e => setTracesPath(e.target.value)}
-                  className="w-full px-2 py-1 rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)]"
+                  value={settings.tracesDir}
+                  onChange={e => updateField('tracesDir', e.target.value)}
+                  className="w-full px-2 py-1 rounded bg-surface-3 border border-primary"
                 />
               </Field>
               <Field label="Mouse buffer (minutes)">
                 <input
                   type="number"
-                  value={mouseBuffer}
-                  onChange={e => setMouseBuffer(Math.max(1, Number(e.target.value)))}
-                  className="w-24 px-2 py-1 rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)]"
+                  value={settings.mouseBufferMinutes}
+                  onChange={e => updateField('mouseBufferMinutes', Math.max(1, Number(e.target.value)))}
+                  className="w-24 px-2 py-1 rounded bg-surface-3 border border-primary"
                 />
               </Field>
               <Field label="Parse existing on start (max)">
                 <input
                   type="number"
-                  value={maxExisting}
-                  onChange={e => setMaxExisting(Math.max(0, Number(e.target.value)))}
-                  className="w-24 px-2 py-1 rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)]"
+                  value={settings.maxExistingOnStart}
+                  onChange={e => updateField('maxExistingOnStart', Math.max(0, Number(e.target.value)))}
+                  className="w-24 px-2 py-1 rounded bg-surface-3 border border-primary"
                 />
               </Field>
+              {/* <Field label="Gemini API key">
+                <input
+                  value={settings.geminiApiKey || ''}
+                  onChange={e => updateField('geminiApiKey', e.target.value)}
+                  placeholder="AIza..."
+                  className="w-full px-2 py-1 rounded bg-surface-3 border border-primary"
+                />
+              </Field>
+              <div className="text-xs text-secondary">
+                You can also set the environment variable <code className="px-1 py-0.5 rounded bg-surface-3 border border-primary">REFLEKS_GEMINI_API_KEY</code> to override this value at runtime.
+              </div> */}
             </div>
           )}
         </section>
@@ -251,11 +319,17 @@ export function SettingsPage() {
         {/* Actions & Help */}
         <section>
           <div className="flex items-center gap-2">
-            <Button variant="accent" size="md" onClick={save}>Save</Button>
-            <Button variant="secondary" size="md" onClick={onReset}>Reset to defaults</Button>
+            <Button variant="accent" size="md" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+            <Button variant="secondary" size="md" onClick={() => setIsResetOpen(true)} disabled={saving}>Reset to defaults</Button>
+            <Button variant="secondary" size="md" onClick={() => setIsClearCacheOpen(true)} disabled={saving}>Clear Cache</Button>
+            {settings.autostartEnabled && (
+              <Button variant="danger" size="md" onClick={() => quitApp()}>Quit App</Button>
+            )}
           </div>
         </section>
       </div>
+      <ResetSettingsModal isOpen={isResetOpen} onClose={() => setIsResetOpen(false)} onConfirm={handleReset} />
+      <ClearCacheModal isOpen={isClearCacheOpen} onClose={() => setIsClearCacheOpen(false)} onConfirm={handleClearCache} />
     </div>
   )
 }
@@ -265,7 +339,7 @@ type FieldProps = { label: string; children: ReactNode }
 function Field({ label, children }: FieldProps) {
   return (
     <label className="flex items-center gap-3">
-      <div className="w-48 text-sm text-[var(--text-primary)]">{label}</div>
+      <div className="w-48 text-sm text-primary">{label}</div>
       <div className="flex-1">{children}</div>
     </label>
   )

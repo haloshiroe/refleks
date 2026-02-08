@@ -1,13 +1,18 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Line } from 'react-chartjs-2'
 import { useChartTheme } from '../../hooks/useChartTheme'
-import { CHART_DECIMALS, formatNumber } from '../../lib/utils'
+import { CHART_DECIMALS } from '../../lib/constants'
+import { formatNumber } from '../../lib/utils'
 import type { ScenarioRecord } from '../../types/ipc'
+import { ChartBox } from '../shared/ChartBox'
 
-type TimeOfDayAreaChartProps = { items: ScenarioRecord[] }
+type TimeOfDayAreaChartProps = {
+  items: ScenarioRecord[]
+}
 
 export function TimeOfDayAreaChart({ items }: TimeOfDayAreaChartProps) {
   const theme = useChartTheme()
+  const [isExpanded, setIsExpanded] = useState(false)
 
   const counts = useMemo(() => {
     const arr = Array.from({ length: 24 }, () => 0)
@@ -28,14 +33,14 @@ export function TimeOfDayAreaChart({ items }: TimeOfDayAreaChartProps) {
       {
         label: 'Runs per hour',
         data: counts,
-        borderColor: 'rgb(99,102,241)',
+        borderColor: theme.accent,
         backgroundColor: (ctx: any) => {
           const chart = ctx.chart
           const { ctx: c, chartArea } = chart
-          if (!chartArea) return 'rgba(99,102,241,0.25)'
+          if (!chartArea) return theme.accentSoft
           const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
-          g.addColorStop(0, 'rgba(99,102,241,0.45)')
-          g.addColorStop(1, 'rgba(99,102,241,0.00)')
+          g.addColorStop(0, theme.accent)
+          g.addColorStop(1, theme.accentSoft)
           return g
         },
         fill: 'start',
@@ -43,7 +48,7 @@ export function TimeOfDayAreaChart({ items }: TimeOfDayAreaChartProps) {
         pointRadius: 0,
       },
     ],
-  }), [labels, counts])
+  }), [labels, counts, theme])
 
   const options = useMemo(() => ({
     responsive: true,
@@ -69,15 +74,40 @@ export function TimeOfDayAreaChart({ items }: TimeOfDayAreaChartProps) {
       x: {
         grid: { color: theme.grid },
         ticks: { color: theme.textSecondary },
+        title: { display: isExpanded, text: 'Hour of Day', color: theme.textSecondary }
       },
       y: {
         grid: { color: theme.grid },
         ticks: { color: theme.textSecondary, precision: 0 },
         beginAtZero: true,
         suggestedMin: 0,
+        title: { display: isExpanded, text: 'Runs', color: theme.textSecondary }
       },
     },
-  }), [theme])
+  }), [theme, isExpanded])
 
-  return <Line data={data as any} options={options as any} />
+  const infoContent = (
+    <div>
+      <div className="mb-2">Shows the distribution of your runs across the 24-hour day.</div>
+      <ul className="list-disc pl-5 text-secondary">
+        <li>Peaks indicate your most active playing times.</li>
+        <li>Useful for identifying when you perform best or play most often.</li>
+      </ul>
+    </div>
+  )
+
+  return (
+    <ChartBox
+      title="Time of Day (Runs)"
+      expandable={true}
+      isExpanded={isExpanded}
+      onExpandChange={setIsExpanded}
+      info={infoContent}
+      height={300}
+    >
+      <div className="h-full">
+        <Line options={options} data={data} />
+      </div>
+    </ChartBox>
+  )
 }

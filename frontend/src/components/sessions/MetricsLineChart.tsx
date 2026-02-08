@@ -1,12 +1,20 @@
 import { useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import { useChartTheme } from '../../hooks/useChartTheme';
-import { CHART_DECIMALS, extractChartValue, formatNumber, formatPct, formatSeconds, formatUiValueForLabel } from '../../lib/utils';
+import { CHART_DECIMALS } from '../../lib/constants';
+import { extractChartValue, formatNumber, formatPct, formatSeconds, formatUiValueForLabel } from '../../lib/utils';
+import { useChartBoxContext } from '../shared/ChartBox';
 
-type MetricsLineChartProps = { labels: string[]; score: number[]; acc: number[]; ttk: number[] }
+type MetricsLineChartProps = {
+  labels: string[]
+  score: number[]
+  acc: number[]
+  ttk: number[]
+}
 
 export function MetricsLineChart({ labels, score, acc, ttk }: MetricsLineChartProps) {
   const colors = useChartTheme()
+  const { isExpanded } = useChartBoxContext()
 
   const data = useMemo(() => ({
     labels,
@@ -15,8 +23,8 @@ export function MetricsLineChart({ labels, score, acc, ttk }: MetricsLineChartPr
         label: 'Score',
         data: score,
         yAxisID: 'yScore',
-        borderColor: 'rgb(16, 185, 129)',
-        backgroundColor: 'rgba(16, 185, 129, 0.15)',
+        borderColor: colors.success,
+        backgroundColor: colors.successSoft,
         tension: 0.25,
         pointRadius: 2,
       },
@@ -24,8 +32,8 @@ export function MetricsLineChart({ labels, score, acc, ttk }: MetricsLineChartPr
         label: 'Accuracy (%)',
         data: acc,
         yAxisID: 'yAcc',
-        borderColor: 'rgb(59, 130, 246)',
-        backgroundColor: 'rgba(59, 130, 246, 0.25)',
+        borderColor: colors.accent,
+        backgroundColor: colors.accentSoft,
         tension: 0.25,
         pointRadius: 2,
       },
@@ -33,14 +41,14 @@ export function MetricsLineChart({ labels, score, acc, ttk }: MetricsLineChartPr
         label: 'Real Avg TTK (s)',
         data: ttk,
         yAxisID: 'yTTK',
-        borderColor: 'rgb(239, 68, 68)',
-        backgroundColor: 'rgba(239, 68, 68, 0.25)',
+        borderColor: colors.danger,
+        backgroundColor: colors.dangerSoft,
         tension: 0.25,
         pointRadius: 2,
         hidden: true
       },
     ]
-  }), [labels, score, acc, ttk])
+  }), [labels, score, acc, ttk, colors])
 
   const options = useMemo(() => ({
     responsive: true,
@@ -67,12 +75,34 @@ export function MetricsLineChart({ labels, score, acc, ttk }: MetricsLineChartPr
       },
     },
     scales: {
-      x: { grid: { color: colors.grid }, ticks: { color: colors.textSecondary } },
-      yScore: { type: 'linear' as const, position: 'left' as const, grid: { color: colors.grid }, ticks: { color: colors.textSecondary, callback: (v: any) => formatNumber(v, CHART_DECIMALS.numTick) } },
-      yAcc: { type: 'linear' as const, position: 'right' as const, grid: { drawOnChartArea: false }, ticks: { color: colors.textSecondary, callback: (v: any) => formatPct(v, CHART_DECIMALS.pctTick) } },
-      yTTK: { type: 'linear' as const, position: 'right' as const, grid: { drawOnChartArea: false }, ticks: { color: colors.textSecondary, callback: (v: any) => formatSeconds(v, CHART_DECIMALS.ttkTick) } },
+      x: {
+        grid: { color: colors.grid },
+        ticks: { color: colors.textSecondary },
+        title: { display: isExpanded, text: 'Session History', color: colors.textSecondary }
+      },
+      yScore: {
+        type: 'linear' as const,
+        position: 'left' as const,
+        grid: { color: colors.grid },
+        ticks: { color: colors.textSecondary, callback: (v: any) => formatNumber(v, CHART_DECIMALS.numTick) },
+        title: { display: isExpanded, text: 'Score', color: colors.textSecondary }
+      },
+      yAcc: {
+        type: 'linear' as const,
+        position: 'right' as const,
+        grid: { drawOnChartArea: false },
+        ticks: { color: colors.textSecondary, callback: (v: any) => formatPct(v, CHART_DECIMALS.pctTick) },
+        title: { display: isExpanded, text: 'Accuracy', color: colors.textSecondary }
+      },
+      yTTK: {
+        type: 'linear' as const,
+        position: 'right' as const,
+        grid: { drawOnChartArea: false },
+        ticks: { color: colors.textSecondary, callback: (v: any) => formatSeconds(v, CHART_DECIMALS.ttkTick) },
+        title: { display: isExpanded, text: 'Real Avg TTK', color: colors.textSecondary }
+      },
     },
-  }), [colors])
+  }), [colors, isExpanded])
 
   return <Line data={data as any} options={options as any} />
 }

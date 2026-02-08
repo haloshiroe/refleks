@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
 import { Scatter } from 'react-chartjs-2';
-import { ChartBox } from '..';
 import { useChartTheme } from '../../hooks/useChartTheme';
-import { CHART_DECIMALS, formatNumber, formatPct, formatUiValueForLabel } from '../../lib/utils';
-import { AccuracyVsSpeedDetails } from './AccuracyVsSpeedDetails';
+import { usePageState } from '../../hooks/usePageState';
+import { CHART_DECIMALS } from '../../lib/constants';
+import { formatNumber, formatPct, formatUiValueForLabel } from '../../lib/utils';
+import { ChartBox } from '../shared/ChartBox';
 
 type AccuracyVsSpeedChartProps = {
   points: Array<{ x: number; y: number; i: number }>
@@ -20,6 +21,7 @@ type AccuracyVsSpeedChartProps = {
 
 export function AccuracyVsSpeedChart({ points, scatter }: AccuracyVsSpeedChartProps) {
   const colors = useChartTheme()
+  const [isExpanded, setIsExpanded] = usePageState('analysis:acc-vs-speed:expanded', false)
   const data = useMemo(() => ({
     datasets: [
       {
@@ -27,8 +29,8 @@ export function AccuracyVsSpeedChart({ points, scatter }: AccuracyVsSpeedChartPr
         data: points,
         parsing: false,
         showLine: false,
-        borderColor: 'rgb(99,102,241)',
-        backgroundColor: 'rgba(99,102,241,0.4)',
+        borderColor: colors.accent,
+        backgroundColor: colors.accentSoft,
         pointRadius: 3,
         pointHoverRadius: 4,
         pointHitRadius: 8,
@@ -66,38 +68,44 @@ export function AccuracyVsSpeedChart({ points, scatter }: AccuracyVsSpeedChartPr
         grid: { color: colors.grid },
         suggestedMin: 0,
         suggestedMax: Math.max(60, Math.ceil(maxX / 10) * 10),
+        title: { display: isExpanded, text: 'Speed (KPM)', color: colors.textSecondary }
       },
       y: {
         suggestedMin: 0,
         suggestedMax: 1,
         ticks: { color: colors.textSecondary, callback: (v: any) => formatPct(v, CHART_DECIMALS.pctTick) },
         grid: { color: colors.grid },
+        title: { display: isExpanded, text: 'Accuracy (%)', color: colors.textSecondary }
       },
     },
-  }), [colors, maxX])
+  }), [colors, maxX, isExpanded])
+
+  const infoContent = (
+    <div className="text-sm">
+      <div className="mb-2">Each point is a kill: X is speed (kills per minute - KPM), Y is per-kill accuracy (hits/shots). Tooltips show exact KPM and accuracy percentages for each point.</div>
+      <div className="mb-2 font-medium">How to interpret</div>
+      <ul className="list-disc pl-5 text-secondary">
+        <li>Clusters at high KPM and high accuracy indicate effective play at both speed and accuracy.</li>
+        <li>A descending trend (accuracy drops as KPM increases) reveals a speed/accuracy trade-off - consider practicing at lower speeds for accuracy, and vice versa.</li>
+        <li>Tight, compact clusters indicate consistent performance; scattered points indicate variability.</li>
+        <li>The centroid (See details above) shows your typical playing point; try training slightly above it to expand your margin at higher speeds.</li>
+        <li>Short TTKs are clamped to avoid infinite KPM values - treat those as very fast plays rather than exact KPM values.</li>
+      </ul>
+    </div>
+  )
 
   return (
-    <div>
-      <ChartBox
-        title="Accuracy vs Speed (per kill)"
-        info={<div className="text-sm">
-          <div className="mb-2">Each point is a kill: X is speed (kills per minute - KPM), Y is per-kill accuracy (hits/shots). Tooltips show exact KPM and accuracy percentages for each point.</div>
-          <div className="mb-2 font-medium">How to interpret</div>
-          <ul className="list-disc pl-5 text-[var(--text-secondary)]">
-            <li>Clusters at high KPM and high accuracy indicate effective play at both speed and accuracy.</li>
-            <li>A descending trend (accuracy drops as KPM increases) reveals a speed/accuracy trade-off - consider practicing at lower speeds for accuracy, and vice versa.</li>
-            <li>Tight, compact clusters indicate consistent performance; scattered points indicate variability.</li>
-            <li>The centroid (See details above) shows your typical playing point; try training slightly above it to expand your margin at higher speeds.</li>
-            <li>Short TTKs are clamped to avoid infinite KPM values - treat those as very fast plays rather than exact KPM values.</li>
-          </ul>
-        </div>}
-        height={320}
-      >
-        <div className="h-full">
-          <Scatter data={data as any} options={options as any} />
-        </div>
-      </ChartBox>
-      <AccuracyVsSpeedDetails scatter={scatter} />
-    </div>
+    <ChartBox
+      title="Accuracy vs Speed (per kill)"
+      expandable={true}
+      isExpanded={isExpanded}
+      onExpandChange={setIsExpanded}
+      info={infoContent}
+      height={320}
+    >
+      <div className="h-full">
+        <Scatter data={data as any} options={options as any} />
+      </div>
+    </ChartBox>
   )
 }

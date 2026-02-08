@@ -1,16 +1,25 @@
-import { Play } from 'lucide-react'
-import { Fragment, useMemo, useRef, useState } from 'react'
+import { ChartLine, Info, NotebookPen, Play, Settings2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useBenchmarkVisibility } from '../../hooks/useBenchmarkVisibility'
+import { useDragScroll } from '../../hooks/useDragScroll'
 import { useHorizontalWheelScroll } from '../../hooks/useHorizontalWheelScroll'
+import { usePageState } from '../../hooks/usePageState'
 import { useResizableScenarioColumn } from '../../hooks/useResizableScenarioColumn'
 import { useStore } from '../../hooks/useStore'
-import { groupByScenario } from '../../lib/analysis/metrics'
-import { autoHiddenRanks, cellFill, computeFillColor, computeRecommendationScores, numberFmt, PLAY_COL_WIDTH, RANK_MIN_WIDTH, RECOMMEND_COL_WIDTH, SCORE_COL_WIDTH, thresholdContribution } from '../../lib/benchmarks'
-import { launchScenario } from '../../lib/internal'
-import { getScenarioName, MISSING_STR } from '../../lib/utils'
+import { ENERGY_COL_WIDTH, NOTES_COL_WIDTH, PADDING_COL_WIDTH, PLAY_COL_WIDTH, RANK_MIN_WIDTH, RECOMMEND_COL_WIDTH, SCORE_COL_WIDTH } from '../../lib/benchmarks/layout'
+import { computeRecommendationScores, selectTopPicks, type ScenarioBenchmarkData } from '../../lib/benchmarks/recommendations'
+import { MISSING_STR } from '../../lib/constants'
+import { getSettings, launchScenario, saveScenarioNote } from '../../lib/internal'
+import { formatNumber, getScenarioName } from '../../lib/utils'
 import type { BenchmarkProgress as ProgressModel } from '../../types/ipc'
-import { Button } from '../shared/Button'
-import { Dropdown } from '../shared/Dropdown'
+import { ContextMenu } from '../shared/ContextMenu'
+import { Modal } from '../shared/Modal'
 import { Toggle } from '../shared/Toggle'
+import { BenchmarkControls } from './BenchmarkControls'
+import { BenchmarkInfoModal } from './BenchmarkInfoModal'
+import { BenchmarkScenarioRow } from './BenchmarkScenarioRow'
+import { ScenarioHistoryModal } from './ScenarioHistoryModal'
+import { ScenarioNotesModal } from './ScenarioNotesModal'
 
 type BenchmarkProgressProps = {
   progress: ProgressModel
@@ -21,28 +30,61 @@ export function BenchmarkProgress({ progress }: BenchmarkProgressProps) {
 
   const categories = progress?.categories || []
 
-  // Global data: recent scenarios and sessions to inform recommendations
-  const scenarios = useStore(s => s.scenarios)
   const sessions = useStore(s => s.sessions)
 
   // Ref to horizontal scroll container
   const containerRef = useRef<HTMLDivElement | null>(null)
 
-  // Helper: small triangle glyph like SummaryStats
-  const triangle = (dir: 'up' | 'down', colorVar: string) => (
-    <span
-      className="inline-block align-[-2px] text-[10px] leading-none"
-      style={{ color: `var(${colorVar})` }}
-      aria-hidden
-    >
-      {dir === 'up' ? '▲' : '▼'}
-    </span>
-  )
-
   // Resizable scenario column state (effects & dynamic columns defined after rank visibility calc)
   const { scenarioWidth, onHandleMouseDown } = useResizableScenarioColumn({ initialWidth: 220, min: 140, max: 600 })
 
   const overallRankName = rankDefs[(progress?.overallRank ?? 0) - 1]?.name || MISSING_STR
+  const [hScrollEnabled, setHScrollEnabled] = usePageState<boolean>('bench:progress:horizontalScroll', false)
+  const [compactMode, setCompactMode] = usePageState<boolean>('bench:progress:compactMode', false)
+  const [showLegend, setShowLegend] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+
+  // Column visibility state
+  const [showNotesCol, setShowNotesCol] = usePageState<boolean>('bench:progress:showNotesCol', true)
+  const [showRecCol, setShowRecCol] = usePageState<boolean>('bench:progress:showRecCol', true)
+  const [showPlayCol, setShowPlayCol] = usePageState<boolean>('bench:progress:showPlayCol', true)
+  const [showHistoryCol, setShowHistoryCol] = usePageState<boolean>('bench:progress:showHistoryCol', true)
+
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, scenario: string, thresholds: number[] } | null>(null)
+
+  // Notes modal state
+  const [settings, setSettings] = useState<any>(null)
+  useEffect(() => {
+    getSettings().then(setSettings).catch(() => { })
+  }, [])
+
+  const [modalState, setModalState] = useState<{ open: boolean, scenario: string, notes: string, sens: string }>({ open: false, scenario: '', notes: '', sens: '' })
+
+  const openNotes = (scenario: string) => {
+    const note = settings?.scenarioNotes?.[scenario]
+    setModalState({
+      open: true,
+      scenario,
+      notes: note?.notes || '',
+      sens: note?.sens || ''
+    })
+  }
+
+  const saveNotes = async (notes: string, sens: string) => {
+    await saveScenarioNote(modalState.scenario, notes, sens)
+    setSettings((prev: any) => ({
+      ...prev,
+      scenarioNotes: {
+        ...prev?.scenarioNotes,
+        [modalState.scenario]: { notes, sens }
+      }
+    }))
+  }
+
+  const [historyModalState, setHistoryModalState] = useState<{ open: boolean, scenario: string, thresholds?: number[] }>({ open: false, scenario: '' })
+  const openHistory = (scenario: string, thresholds: number[]) => {
+    setHistoryModalState({ open: true, scenario, thresholds })
+  }
 
   // Build name sets and historical metrics used for recommendations
   const wantedNames = useMemo(() => {
@@ -55,7 +97,6 @@ export function BenchmarkProgress({ progress }: BenchmarkProgressProps) {
     return Array.from(set)
   }, [categories])
 
-  const byName = useMemo(() => groupByScenario(scenarios), [scenarios])
   const lastSession = useMemo(() => sessions[0] ?? null, [sessions])
   const lastSessionCount = useMemo(() => {
     const m = new Map<string, number>()
@@ -67,90 +108,130 @@ export function BenchmarkProgress({ progress }: BenchmarkProgressProps) {
     }
     return m
   }, [lastSession])
-  const lastPlayedMs = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const it of scenarios) {
-      const n = getScenarioName(it)
-      if (map.has(n)) continue
-      const ms = Date.parse(String(it.stats?.['Date Played'] ?? ''))
-      if (Number.isFinite(ms)) map.set(n, ms)
-    }
-    return map
-  }, [scenarios])
 
-  // Recommendation score per scenario name (base score without threshold proximity)
-  const recScore = useMemo(() => computeRecommendationScores({ wantedNames, byName, lastPlayedMs, lastSessionCount, sessions }), [wantedNames, byName, lastPlayedMs, lastSessionCount, sessions])
-
-  // Ranks visibility controls
-  const [autoHideCleared, setAutoHideCleared] = useState<boolean>(true)
-  const [manuallyHidden, setManuallyHidden] = useState<Set<number>>(() => new Set())
-  // Desired number of rank columns to keep visible (when auto-hide is enabled)
-  const [visibleRankCount, setVisibleRankCount] = useState<number>(4)
-
-  // Flatten all scenarios visible in this benchmark view
-  const allScenarios = useMemo(() => {
-    const list: Array<{ scenarioRank: number }> = []
-    for (const { groups } of categories) {
+  // Build benchmark data map for recommendation engine
+  const benchmarkData = useMemo(() => {
+    const map = new Map<string, ScenarioBenchmarkData>()
+    for (const { groups, name: catName } of categories) {
       for (const g of groups) {
-        for (const s of g.scenarios) list.push({ scenarioRank: Number(s.scenarioRank || 0) })
+        for (const s of g.scenarios) {
+          map.set(s.name, {
+            rank: Number(s.scenarioRank || 0),
+            score: Number(s.score || 0),
+            thresholds: s.thresholds || [],
+            category: catName
+          })
+        }
       }
     }
-    return list
+    return map
   }, [categories])
 
-  // Auto-hide any rank where ALL scenarios have surpassed that rank
-  const autoHidden = useMemo(() => {
-    const n = rankDefs.length
-    // Precompute flat scenario rank array
-    const ranksArr = allScenarios.map(s => Number(s.scenarioRank || 0))
-    return autoHiddenRanks(n, ranksArr, autoHideCleared, visibleRankCount)
-  }, [rankDefs.length, allScenarios, autoHideCleared, visibleRankCount])
+  // Map scenario -> category name for diversity
+  const scenarioCategoryMap = useMemo(() => {
+    const map = new Map<string, string>()
+    if (!categories) return map
+    for (const cat of categories) {
+      for (const g of cat.groups) {
+        for (const s of g.scenarios) {
+          map.set(s.name, cat.name)
+        }
+      }
+    }
+    return map
+  }, [categories])
 
-  // Combine manual + auto hidden sets
-  const effectiveHidden = useMemo(() => {
-    const out = new Set<number>()
-    manuallyHidden.forEach(i => out.add(i))
-    autoHidden.forEach(i => out.add(i))
-    return out
-  }, [manuallyHidden, autoHidden])
+  // Recommendation score per scenario name
+  const recScore = useMemo(() => computeRecommendationScores({
+    wantedNames,
+    lastSessionCount,
+    sessions,
+    benchmarkData
+  }), [wantedNames, lastSessionCount, sessions, benchmarkData])
 
-  // Compute the visible rank indices and rank defs. Ensure at least one is visible.
-  const visibleRankIndices = useMemo(() => {
-    const n = rankDefs.length
-    const all = Array.from({ length: n }, (_, i) => i)
-    let vis = all.filter(i => !effectiveHidden.has(i))
-    if (vis.length === 0 && n > 0) vis = [n - 1] // always show the top rank if everything would be hidden
-    return vis
-  }, [rankDefs.length, effectiveHidden])
+  // Identify top picks (top 3 with score >= 2, diverse categories)
+  const topPicks = useMemo(() => {
+    const maxPicks = categories ? Math.max(3, categories.length) : 3
+    return selectTopPicks(recScore, scenarioCategoryMap, maxPicks)
+  }, [recScore, scenarioCategoryMap, categories])
 
-  const visibleRanks = useMemo(() => visibleRankIndices.map(i => rankDefs[i]), [visibleRankIndices, rankDefs])
+  // Ranks visibility controls (refactored into hook)
+  const {
+    autoHideCleared, setAutoHideCleared,
+    visibleRankCount, setVisibleRankCount,
+    manuallyHidden, toggleManualRank, resetManual,
+    autoHidden,
+    visibleRankIndices,
+    visibleRanks
+  } = useBenchmarkVisibility(progress)
 
-  // Constants for non-rank columns
-  const REC_W = RECOMMEND_COL_WIDTH, PLAY_W = PLAY_COL_WIDTH, SCORE_W = SCORE_COL_WIDTH
-  // Dynamic grid columns (flex growth for ranks): Scenario | Recom | Play | Score | Rank1..N
+  const hasEnergy = useMemo(() => {
+    if (!categories) return false
+    for (const cat of categories) {
+      for (const g of cat.groups) {
+        if (g.energy != null) return true
+        for (const s of g.scenarios) {
+          if (s.energy != null) return true
+        }
+      }
+    }
+    return false
+  }, [categories])
+
+  // Dynamic grid columns (flex growth for ranks): Scenario | Pad | Notes | Recom | Play | History | Pad | Score | Rank1..N
   const dynamicColumns = useMemo(() => {
     const rankTracks = visibleRankIndices.map(() => `minmax(${RANK_MIN_WIDTH}px,1fr)`).join(' ')
-    return `${Math.round(scenarioWidth)}px ${REC_W}px ${PLAY_W}px ${SCORE_W}px ${rankTracks}`
-  }, [scenarioWidth, visibleRankIndices.length])
+    const parts = [
+      `${Math.round(scenarioWidth)}px`,
+      `${PADDING_COL_WIDTH}px`,
+      showNotesCol ? `${NOTES_COL_WIDTH}px` : null,
+      showRecCol ? `${RECOMMEND_COL_WIDTH}px` : null,
+      showPlayCol ? `${PLAY_COL_WIDTH}px` : null,
+      showHistoryCol ? `${PLAY_COL_WIDTH}px` : null,
+      `${PADDING_COL_WIDTH}px`,
+      `${SCORE_COL_WIDTH}px`,
+      rankTracks,
+      hasEnergy ? `${ENERGY_COL_WIDTH}px` : null
+    ].filter(Boolean).join(' ')
+    return parts
+  }, [scenarioWidth, visibleRankIndices.length, hasEnergy, showNotesCol, showRecCol, showPlayCol, showHistoryCol])
 
-  // Attach refined wheel scroll: only active when cursor is to right of Scenario+Recom prefix
-  useHorizontalWheelScroll(containerRef, { excludeLeftWidth: scenarioWidth + REC_W })
+  // Attach refined wheel scroll: only enable horizontal wheel mapping when
+  // the cursor is over the rank columns. We compute the left-offset where ranks begin.
+  useHorizontalWheelScroll(containerRef, { excludeLeftWidth: scenarioWidth + PADDING_COL_WIDTH + (showNotesCol ? NOTES_COL_WIDTH : 0) + (showRecCol ? RECOMMEND_COL_WIDTH : 0) + (showPlayCol ? PLAY_COL_WIDTH : 0) + (showHistoryCol ? PLAY_COL_WIDTH : 0) + PADDING_COL_WIDTH + SCORE_COL_WIDTH, enabled: hScrollEnabled })
+  // Drag-> allow grabbing container to scroll horizontally (skip interactive elements / resize handles)
+  // Always enable drag-to-scroll regardless of the wheel mapping toggle
+  useDragScroll(containerRef, { axis: 'x', skipSelector: 'button, a, input, textarea, select, [role="button"]' })
 
-  // Handlers for manual toggles
-  const toggleManualRank = (idx: number) => {
-    setManuallyHidden(prev => {
-      const next = new Set(prev)
-      if (next.has(idx)) next.delete(idx)
-      else next.add(idx)
-      return next
-    })
+  const handleContextMenu = (e: React.MouseEvent, scenario: string, thresholds: number[]) => {
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY, scenario, thresholds })
   }
-  const resetManual = () => setManuallyHidden(new Set())
 
   return (
     <div className="space-y-4">
-      <div className="text-sm text-[var(--text-primary)]">
-        Overall Rank: <span className="font-medium">{overallRankName}</span> · Benchmark Progress: <span className="font-medium">{numberFmt(progress?.benchmarkProgress)}</span>
+      <div className="flex items-center justify-between text-sm text-primary">
+        <div>
+          Overall Rank: <span className="font-medium">{overallRankName}</span> · Benchmark Progress: <span className="font-medium">{formatNumber(progress?.benchmarkProgress)}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <Toggle size="sm" label="Compact mode" checked={compactMode} onChange={setCompactMode} />
+          <Toggle size="sm" label="Horizontal scroll" checked={hScrollEnabled} onChange={setHScrollEnabled} />
+          <button
+            className="p-1 rounded hover:bg-surface-3 text-primary"
+            onClick={() => setShowSettings(true)}
+            title="Rank column settings"
+          >
+            <Settings2 size={18} />
+          </button>
+          <button
+            className="p-1 rounded hover:bg-surface-3 text-primary"
+            onClick={() => setShowLegend(true)}
+            title="Recommendation legend"
+          >
+            <Info size={18} />
+          </button>
+        </div>
       </div>
 
       {categories && (
@@ -158,14 +239,14 @@ export function BenchmarkProgress({ progress }: BenchmarkProgressProps) {
           <div className="min-w-max">
             {/* Single sticky header aligned with all categories */}
             <div className="sticky top-0">
-              <div className="border border-[var(--border-primary)] rounded bg-[var(--bg-tertiary)] overflow-hidden">
+              <div className="border border-primary rounded bg-surface-3 overflow-hidden">
                 <div className="flex gap-2 px-2 py-2">
                   {/* Placeholders for category and subcategory label columns */}
                   <div className="w-8 flex-shrink-0" />
                   <div className="w-8 flex-shrink-0" />
                   <div className="flex-1">
                     <div className="grid gap-1" style={{ gridTemplateColumns: dynamicColumns }}>
-                      <div className="text-[11px] text-[var(--text-secondary)] uppercase tracking-wide relative select-none" style={{ width: scenarioWidth }}>
+                      <div className="text-[11px] text-secondary uppercase tracking-wide relative select-none" style={{ width: scenarioWidth }}>
                         <span>Scenario</span>
                         {/* Drag handle */}
                         <div
@@ -175,89 +256,107 @@ export function BenchmarkProgress({ progress }: BenchmarkProgressProps) {
                           aria-orientation="vertical"
                           aria-label="Resize scenario column"
                         >
-                          <div className="h-full w-px bg-[var(--border-secondary)] group-hover:bg-[var(--accent-primary)]" />
+                          <div className="h-full w-px bg-border-secondary group-hover:bg-accent" />
                         </div>
                       </div>
-                      <div className="text-[11px] text-[var(--text-secondary)] uppercase tracking-wide text-center" title="Recommendation score (negative means: switch)">Recom</div>
-                      <div className="text-[11px] text-[var(--text-secondary)] uppercase tracking-wide text-center">Play</div>
-                      <div className="text-[11px] text-[var(--text-secondary)] uppercase tracking-wide">Score</div>
+                      <div className="text-[11px] text-secondary uppercase tracking-wide text-center"></div>
+                      {showNotesCol && <div className="text-[11px] text-secondary uppercase tracking-wide text-center"></div>}
+                      {showRecCol && <div className="text-[11px] text-secondary uppercase tracking-wide text-center" title="Recommendation score"></div>}
+                      {showPlayCol && <div className="text-[11px] text-secondary uppercase tracking-wide text-center"></div>}
+                      {showHistoryCol && <div className="text-[11px] text-secondary uppercase tracking-wide text-center"></div>}
+                      <div className="text-[11px] text-secondary uppercase tracking-wide text-center"></div>
+                      <div className="text-[11px] text-secondary uppercase tracking-wide">Score</div>
                       {visibleRanks.map(r => (
-                        <div key={r.name} className="text-[11px] uppercase tracking-wide text-center" style={{ color: r.color || 'var(--text-secondary)' }}>{r.name}</div>
+                        <div
+                          key={r.name}
+                          className={`text-[11px] uppercase tracking-wide text-center ${r.color ? '' : 'text-secondary'}`}
+                          style={r.color ? { color: r.color } : undefined}
+                        >
+                          {r.name}
+                        </div>
                       ))}
+                      {hasEnergy && <div className="text-[11px] text-secondary uppercase tracking-wide text-center">Energy</div>}
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Category cards content (no repeated headers) */}
+            {/* Category cards content */}
             {categories.map(({ name: catName, color: catColor, groups }) => {
               const ranks = rankDefs
+              // Lighten the category color for better readability on dark backgrounds
+              const displayCatColor = catColor ? `color-mix(in srgb, ${catColor}, white)` : 'var(--text-primary)'
+
               return (
-                <div key={catName} className="border border-[var(--border-primary)] rounded bg-[var(--bg-tertiary)] overflow-hidden mt-3">
+                <div key={catName} className={`border border-primary rounded bg-surface-3 overflow-hidden ${compactMode ? 'mt-1' : 'mt-3'}`}>
                   <div className="flex">
                     {/* Category vertical label with fixed width for alignment */}
                     <div className="w-8 px-1 py-2 flex items-center justify-center">
-                      <span className="text-[10px] font-semibold" style={{ color: catColor || 'var(--text-secondary)', writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>{catName}</span>
+                      <span
+                        className={`font-bold tracking-wide ${compactMode ? 'text-[10px]' : 'text-[11px]'}`}
+                        style={{
+                          color: displayCatColor,
+                          // textShadow: `0 0 20px ${catColor || 'var(--text-primary)'}`,
+                          writingMode: 'vertical-rl',
+                          transform: 'rotate(180deg)'
+                        }}
+                      >
+                        {catName}
+                      </span>
                     </div>
-                    <div className="flex-1 p-2 space-y-3">
-                      {groups.map((g, gi) => (
-                        <div key={gi} className="flex gap-2">
-                          {/* Subcategory vertical label with fixed width for alignment */}
-                          <div className="w-8 px-1 flex items-center justify-center flex-shrink-0">
-                            {g.name ? (
-                              <span className="text-[10px] font-semibold" style={{ color: g.color || 'var(--text-secondary)', writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>{g.name}</span>
-                            ) : (
-                              <span className="text-[10px] text-[var(--text-secondary)]" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>{MISSING_STR}</span>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-max content-center">
-                            <div className="grid gap-1" style={{ gridTemplateColumns: dynamicColumns }}>
-                              {g.scenarios.map((s) => {
-                                const sName = s.name
-                                const achieved = s.scenarioRank
-                                const maxes: number[] = s.thresholds
-                                const score = s.score
-                                const base = recScore.get(sName) ?? 0
-                                const thPts = thresholdContribution(Number(achieved || 0), Number(score || 0), maxes, ranks.length)
-                                const totalRec = Math.round(base + thPts)
-                                return (
-                                  <Fragment key={sName}>
-                                    <div className="text-[13px] text-[var(--text-primary)] truncate flex items-center">{sName}</div>
-                                    <div className="text-[12px] text-[var(--text-primary)] flex items-center justify-center gap-1" title="Recommendation score">
-                                      {triangle(totalRec >= 0 ? 'up' : 'down', totalRec >= 0 ? '--success' : '--error')}
-                                      <span>{totalRec}</span>
-                                    </div>
-                                    <div className="flex items-center justify-center">
-                                      <button
-                                        className="p-1 rounded hover:bg-[var(--bg-tertiary)] border border-transparent hover:border-[var(--border-primary)]"
-                                        title="Play in Kovaak's"
-                                        onClick={() => launchScenario(sName, 'challenge').catch(() => { /* ignore */ })}
-                                      >
-                                        <Play size={16} />
-                                      </button>
-                                    </div>
-                                    <div className="text-[12px] text-[var(--text-primary)] flex items-center">{numberFmt(score)}</div>
-                                    {visibleRankIndices.map((ri) => {
-                                      const r = ranks[ri]
-                                      const fill = cellFill(ri, score, maxes)
-                                      // Use the last achieved rank's color for the fill. When no rank achieved, fallback to gray.
-                                      const fillColor = computeFillColor(achieved, ranks)
-                                      const value = maxes?.[ri + 1]
-                                      return (
-                                        <div key={r.name + ri} className="text-[12px] text-center px-4 rounded relative overflow-hidden flex items-center justify-center bg-[var(--bg-secondary)]">
-                                          <div className="absolute inset-y-0 left-0 rounded-l transition-all duration-150" style={{ width: `${Math.round(fill * 100)}%`, background: fillColor }} />
-                                          <span className="relative z-10 w-full h-full py-1 flex items-center justify-center" style={{ background: "radial-gradient(circle, var(--shadow-secondary), rgba(0, 0, 0, 0))" }}>{value != null ? numberFmt(value) : MISSING_STR}</span>
-                                        </div>
-                                      )
-                                    })}
-                                  </Fragment>
-                                )
-                              })}
+                    <div className={`flex-1 p-2 ${compactMode ? 'space-y-1' : 'space-y-3'}`}>
+                      {groups.map((g, gi) => {
+                        const displaySubColor = g.color ? `color-mix(in srgb, ${g.color}, white)` : 'var(--text-primary)'
+                        return (
+                          <div key={gi} className="flex gap-2">
+                            {/* Subcategory vertical label with fixed width for alignment */}
+                            <div className="w-6 pr-2 flex items-center justify-center flex-shrink-0">
+                              {g.name ? (
+                                <span
+                                  className={`font-bold tracking-wide ${compactMode ? 'text-[10px]' : 'text-[11px]'}`}
+                                  style={{
+                                    color: displaySubColor,
+                                    // textShadow: `0 0 15px ${g.color || 'var(--text-primary)'}`,
+                                    writingMode: 'vertical-rl',
+                                    transform: 'rotate(180deg)'
+                                  }}
+                                >
+                                  {g.name}
+                                </span>
+                              ) : (
+                                <span className={`text-secondary ${compactMode ? 'text-[9px]' : 'text-[10px]'}`} style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>{MISSING_STR}</span>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-max content-center">
+                              <div className="grid gap-1" style={{ gridTemplateColumns: dynamicColumns }}>
+                                {g.scenarios.map((s, si) => (
+                                  <BenchmarkScenarioRow
+                                    key={s.name}
+                                    s={s}
+                                    g={g}
+                                    si={si}
+                                    compactMode={compactMode}
+                                    showNotesCol={showNotesCol}
+                                    showRecCol={showRecCol}
+                                    showPlayCol={showPlayCol}
+                                    showHistoryCol={showHistoryCol}
+                                    settings={settings}
+                                    recScore={recScore}
+                                    topPicks={topPicks}
+                                    ranks={ranks}
+                                    visibleRankIndices={visibleRankIndices}
+                                    hasEnergy={hasEnergy}
+                                    handleContextMenu={handleContextMenu}
+                                    openNotes={openNotes}
+                                    openHistory={openHistory}
+                                  />
+                                ))}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 </div>
@@ -266,53 +365,77 @@ export function BenchmarkProgress({ progress }: BenchmarkProgressProps) {
           </div>
         </div>
       )}
-      {/* Controls panel: placed under the progress content */}
-      <div className="bg-[var(--bg-secondary)] rounded border border-[var(--border-primary)]">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-primary)]">
-          <div className="text-sm font-medium text-[var(--text-primary)]">Rank columns</div>
-          <div className="flex items-center gap-3">
-            <Toggle
-              size="sm"
-              label="Auto-hide earlier ranks"
-              checked={autoHideCleared}
-              onChange={setAutoHideCleared}
-            />
-            <Dropdown
-              size="sm"
-              label="Keep columns visible"
-              ariaLabel="Target number of visible rank columns"
-              value={String(visibleRankCount)}
-              onChange={v => setVisibleRankCount(Math.max(1, parseInt(v || '1', 10) || 1))}
-              options={Array.from({ length: Math.max(9, rankDefs.length) }, (_, i) => i + 1).map(n => ({ label: String(n), value: String(n) }))}
-            />
-            <Button size="sm" variant="ghost" onClick={resetManual} title="Reset manual visibility">Reset</Button>
-          </div>
+      <BenchmarkInfoModal isOpen={showLegend} onClose={() => setShowLegend(false)} />
+
+      <Modal isOpen={showSettings} onClose={() => setShowSettings(false)} title="View Settings" width="600px" height="auto">
+        <div className="p-4">
+          <BenchmarkControls
+            rankDefs={rankDefs}
+            autoHideCleared={autoHideCleared}
+            setAutoHideCleared={setAutoHideCleared}
+            visibleRankCount={visibleRankCount}
+            setVisibleRankCount={setVisibleRankCount}
+            manuallyHidden={manuallyHidden}
+            toggleManualRank={toggleManualRank}
+            resetManual={resetManual}
+            autoHidden={autoHidden}
+            showNotesCol={showNotesCol}
+            setShowNotesCol={setShowNotesCol}
+            showRecCol={showRecCol}
+            setShowRecCol={setShowRecCol}
+            showPlayCol={showPlayCol}
+            setShowPlayCol={setShowPlayCol}
+            showHistoryCol={showHistoryCol}
+            setShowHistoryCol={setShowHistoryCol}
+          />
         </div>
-        <div className="p-3">
-          <div className="text-xs text-[var(--text-secondary)] mb-2">Toggle columns to show/hide. Auto-hidden columns are disabled.</div>
-          <div className="flex flex-wrap gap-1">
-            {rankDefs.map((r, i) => {
-              const auto = autoHidden.has(i)
-              const manualHidden = manuallyHidden.has(i)
-              const visible = !(auto || manualHidden)
-              return (
-                <Button
-                  key={r.name + i}
-                  size="sm"
-                  variant={visible ? 'secondary' : 'ghost'}
-                  onClick={() => toggleManualRank(i)}
-                  disabled={auto}
-                  className={auto ? 'opacity-60 cursor-not-allowed' : ''}
-                  title={auto ? 'Hidden automatically (all scenarios are past this rank)' : (visible ? 'Click to hide this column' : 'Click to show this column')}
-                  style={{ color: r.color || 'var(--text-secondary)' }}
-                >
-                  {r.name}
-                </Button>
-              )
-            })}
-          </div>
-        </div>
-      </div>
+      </Modal>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={[
+            {
+              label: 'Play in Kovaak\'s',
+              icon: <Play size={14} />,
+              onClick: () => launchScenario(contextMenu.scenario, 'challenge').catch(() => { })
+            },
+            {
+              label: 'Notes & Sensitivity',
+              icon: <NotebookPen size={14} />,
+              onClick: () => openNotes(contextMenu.scenario)
+            },
+            {
+              label: 'View History',
+              icon: <ChartLine size={14} />,
+              onClick: () => openHistory(contextMenu.scenario, contextMenu.thresholds)
+            }
+          ]}
+        />
+      )}
+
+      {modalState.open && (
+        <ScenarioNotesModal
+          isOpen={modalState.open}
+          scenarioName={modalState.scenario}
+          initialNotes={modalState.notes}
+          initialSens={modalState.sens}
+          onClose={() => setModalState(s => ({ ...s, open: false }))}
+          onSave={saveNotes}
+        />
+      )}
+
+      {historyModalState.open && (
+        <ScenarioHistoryModal
+          isOpen={historyModalState.open}
+          scenarioName={historyModalState.scenario}
+          onClose={() => setHistoryModalState(s => ({ ...s, open: false }))}
+          ranks={progress.ranks}
+          thresholds={historyModalState.thresholds}
+        />
+      )}
     </div>
   )
 }
